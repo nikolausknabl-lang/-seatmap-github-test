@@ -352,7 +352,7 @@ async function prepareSeatmap(page, venue) {
   });
 
   // echter Seatmap-Zoom, damit die interne Canvas-Detailstufe neu rendert
-  for (let z = 0; z < 5; z++) {
+  for (let z = 0; z < 4; z++) {
     await zoomPlus.first().click({
       force: true,
     });
@@ -425,9 +425,9 @@ async function prepareSeatmap(page, venue) {
     }
 
     const clickResult = await clickEventButtonBySearch(page, {
-      title: "Ödipus",
-      venue: "Residenztheater",
-      dateNeedles: ["12.05.", "May 12"]
+      title: "Bernarda Albas Haus",
+      venue: "Cuvilli",
+      dateNeedles: ["15.05.", "May 15"]
     });
 
     console.log("Such-Klick-Ergebnis:", JSON.stringify(clickResult, null, 2));
