@@ -419,9 +419,9 @@ async function prepareSeatmap(page, venue) {
     }
 
     const clickResult = await clickEventButtonBySearch(page, {
-      title: "",
-      venue: "Marstall",
-      dateNeedles: []
+      title: "Ödipus",
+      venue: "Residenztheater",
+      dateNeedles: ["12.05.", "May 12"]
     });
 
     console.log("Such-Klick-Ergebnis:", JSON.stringify(clickResult, null, 2));
