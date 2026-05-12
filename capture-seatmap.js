@@ -39,6 +39,7 @@ async function main() {
       };
     }).filter(x =>
       x.visible &&
+      x.y > 300 &&
       /Karten|Restkarten/i.test(x.text)
     );
   });
