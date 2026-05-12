@@ -336,7 +336,21 @@ function extractTitle(pageText) {
 
 async function prepareSeatmap(page, venue) {
   if (venue === "marstall") {
-    console.log("Marstall erkannt → kein Zoom");
+    console.log("Marstall erkannt → ein Zoom-Klick");
+    const zoomPlus = page.locator(
+      ".leaflet-control-zoom-in, a[title='Zoom in'], a:has-text('+')"
+    );
+
+    await zoomPlus.first().waitFor({
+      state: "visible",
+      timeout: 15000,
+    });
+
+    await zoomPlus.first().click({
+      force: true,
+    });
+
+    await page.waitForTimeout(1000);
     return;
   }
 
