@@ -37,30 +37,9 @@ async function main() {
     fullPage: true
   });
 
-  console.log("Suche Event-Ticketbutton...");
-
-  const ticketButtons = page.locator("a, button").filter({
-    hasText: /Tickets|Karten|Restkarten/i
-  });
-
-  const count = await ticketButtons.count();
-
-  console.log("Buttons gefunden:", count);
-
-  if (count < 2) {
-    throw new Error("Keine echten Eventbuttons gefunden");
-  }
-
-  // Erstes echtes Event-Ticket
-  const target = ticketButtons.nth(1);
-
-  await target.scrollIntoViewIfNeeded();
-
-  await target.click({
-    force: true
-  });
-
-  console.log("Eventbutton geklickt");
+  console.log("Klicke ersten echten Eventbutton per Koordinate...");
+  await page.mouse.click(1380, 590);
+  console.log("Eventbutton per Koordinate geklickt");
 
   await page.waitForTimeout(10000);
 
