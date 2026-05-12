@@ -382,7 +382,7 @@ async function prepareSeatmap(page, venue) {
       width: 1600,
       height: 1200,
     },
-    deviceScaleFactor: 4,
+    deviceScaleFactor: 3,
   });
 
   const page = await context.newPage();
