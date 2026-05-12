@@ -250,7 +250,15 @@ async function prepareSeatmap(page, venue) {
     force: true,
   });
 
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(500);
+
+  // kleinste zusätzliche Zoom-Stufe testen
+  await zoomPlus.first().click({
+    force: true,
+    delay: 20,
+  });
+
+  await page.waitForTimeout(500);
 
   let dragDistance = 130;
   if (venue === "resi") dragDistance = 320;
