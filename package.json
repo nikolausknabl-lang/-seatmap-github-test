@@ -1,0 +1,12 @@
+{
+  "name": "seatmap-github-test",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node capture-seatmap.js"
+  },
+  "dependencies": {
+    "playwright": "latest"
+  }
+}
