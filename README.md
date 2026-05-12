@@ -1,23 +1,12 @@
-# Seatmap GitHub Actions Test
+# Seatmap GitHub Test v2
 
-Minimaler Test, ob GitHub Actions mit Playwright/Chromium den Staatstheater-Ticketshop laden und Screenshots speichern kann.
+Stufe 2:
+- GitHub Action startet Chromium
+- öffnet Ticketshop
+- klickt den ersten Karten/Restkarten-Button
+- speichert Screenshots und HTML als Artifact
 
-## Nutzung
-
-1. ZIP entpacken.
-2. Inhalt in ein GitHub-Repo legen.
-3. Commit & Push:
-
-```bash
-git add .
-git commit -m "Add seatmap GitHub Actions test"
-git push
-```
-
-4. Auf GitHub: **Actions → Seatmap Screenshot Test → Run workflow**.
-5. Nach dem Lauf: Artifact `seatmap-screenshots` herunterladen.
-
-## Lokal testen
+Lokal testen:
 
 ```bash
 npm install
