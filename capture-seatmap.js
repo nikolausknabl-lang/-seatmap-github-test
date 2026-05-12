@@ -274,8 +274,8 @@ async function prepareSeatmap(page, venue) {
 
   const context = await browser.newContext({
     viewport: {
-      width: 1600,
-      height: 1200,
+      width: 3840,
+      height: 2160,
     },
   });
 
