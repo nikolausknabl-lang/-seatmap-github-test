@@ -475,19 +475,23 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
       });
 
       let el = map;
-      for (let i = 0; i < 8 && el; i++) {
+      for (let i = 0; i < 10 && el; i++) {
         el.style.maxWidth = "none";
         el.style.maxHeight = "none";
-        el.style.width = "2500px";
-        el.style.height = "1800px";
+        el.style.width = "3000px";
+        el.style.height = "2200px";
         el.style.overflow = "visible";
         el = el.parentElement;
       }
 
-      map.style.width = "2500px";
-      map.style.height = "1800px";
+      map.style.width = "3000px";
+      map.style.height = "2200px";
 
       window.dispatchEvent(new Event("resize"));
+
+      setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      }, 500);
 
       if (window.L) {
         document.querySelectorAll(".leaflet-container").forEach((container) => {
@@ -554,13 +558,21 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
       fs.writeFileSync(`debug-canvas-${canvas.index}.png`, Buffer.from(base64, "base64"));
     }
 
-    const mapLocator = page.locator(".leaflet-container").first();
+    const mainCanvas = debugAssets.canvases.find((c) => c.ok && c.dataUrl);
 
-    await mapLocator.screenshot({
-      path: filename,
-    });
+    if (mainCanvas?.dataUrl) {
+      const base64 = mainCanvas.dataUrl.split(",")[1];
+      fs.writeFileSync(filename, Buffer.from(base64, "base64"));
+      console.log(`Direkter Canvas-Export gespeichert: ${filename}`);
+    } else {
+      const mapLocator = page.locator(".leaflet-container").first();
 
-    console.log(`Seatmap-Element-Screenshot gespeichert: ${filename}`);
+      await mapLocator.screenshot({
+        path: filename,
+      });
+
+      console.log(`Fallback Seatmap-Element-Screenshot gespeichert: ${filename}`);
+    }
 
     rows.push([
       saved,
