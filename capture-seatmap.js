@@ -113,7 +113,25 @@ async function main() {
     await page.screenshot({ path: "05-after-dom-click.png", fullPage: true });
   }
 
-  console.log("Finale URL:", page.url());
+  
+  await page.waitForTimeout(3000);
+
+  const weiterButton = page.getByText("Weiter", { exact: true });
+
+  if (await weiterButton.count()) {
+    console.log("Session-Seite erkannt -> klicke Weiter");
+
+    await weiterButton.first().click({ force: true });
+
+    await page.waitForTimeout(5000);
+
+    await page.screenshot({
+      path: "06-after-weiter.png",
+      fullPage: true
+    });
+  }
+
+console.log("Finale URL:", page.url());
   await page.screenshot({ path: "99-final.png", fullPage: true });
 
   await browser.close();
