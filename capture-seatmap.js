@@ -464,12 +464,53 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
     const title = extractTitle(pageText);
     const url = page.url();
 
+    console.log("Versuche Seatmap-Container zu vergrößern...");
+
+    await page.evaluate(() => {
+      const map = document.querySelector(".leaflet-container");
+      if (!map) return;
+
+      document.querySelectorAll("header, nav, footer").forEach((el) => {
+        el.style.display = "none";
+      });
+
+      let el = map;
+      for (let i = 0; i < 8 && el; i++) {
+        el.style.maxWidth = "none";
+        el.style.maxHeight = "none";
+        el.style.width = "1500px";
+        el.style.height = "1050px";
+        el.style.overflow = "visible";
+        el = el.parentElement;
+      }
+
+      map.style.width = "1500px";
+      map.style.height = "1050px";
+
+      window.dispatchEvent(new Event("resize"));
+
+      if (window.L) {
+        document.querySelectorAll(".leaflet-container").forEach((container) => {
+          const id = container._leaflet_id;
+          if (!id) return;
+        });
+      }
+    });
+
+    await page.waitForTimeout(1500);
+
     await page.screenshot({
-      path: filename,
+      path: "debug-expanded-layout.png",
       fullPage: true,
     });
 
-    console.log(`Screenshot gespeichert: ${filename}`);
+    const mapLocator = page.locator(".leaflet-container").first();
+
+    await mapLocator.screenshot({
+      path: filename,
+    });
+
+    console.log(`Seatmap-Element-Screenshot gespeichert: ${filename}`);
 
     rows.push([
       saved,
