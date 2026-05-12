@@ -253,7 +253,7 @@ async function prepareSeatmap(page, venue) {
   await page.waitForTimeout(800);
 
   let dragDistance = 130;
-  if (venue === "resi") dragDistance = 320;
+  if (venue === "resi") dragDistance = 260;
   if (venue === "cuv") dragDistance = 180;
 
   console.log(`Verschiebe Saalplan nach rechts (${dragDistance}px)`);
