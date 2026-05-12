@@ -34,3 +34,5 @@ jobs:
           path: |
             *.png
             *.csv
+            *.svg
+            *.json

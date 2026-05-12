@@ -504,6 +504,56 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
       fullPage: true,
     });
 
+    const debugAssets = await page.evaluate(() => {
+      const svgs = [...document.querySelectorAll(".leaflet-container svg, svg")].map((svg, index) => ({
+        index,
+        outerHTML: svg.outerHTML,
+        width: svg.getBoundingClientRect().width,
+        height: svg.getBoundingClientRect().height,
+      }));
+
+      const canvases = [...document.querySelectorAll(".leaflet-container canvas, canvas")].map((canvas, index) => {
+        try {
+          return {
+            index,
+            ok: true,
+            width: canvas.width,
+            height: canvas.height,
+            dataUrl: canvas.toDataURL("image/png"),
+          };
+        } catch (e) {
+          return {
+            index,
+            ok: false,
+            width: canvas.width,
+            height: canvas.height,
+            error: String(e),
+            dataUrl: null,
+          };
+        }
+      });
+
+      return { svgs, canvases };
+    });
+
+    console.log("SVGs gefunden:", debugAssets.svgs.length);
+    console.log("Canvases gefunden:", debugAssets.canvases.length);
+
+    fs.writeFileSync("debug-seatmap-assets.json", JSON.stringify({
+      svgs: debugAssets.svgs.map(s => ({ index: s.index, width: s.width, height: s.height, length: s.outerHTML.length })),
+      canvases: debugAssets.canvases.map(c => ({ index: c.index, ok: c.ok, width: c.width, height: c.height, error: c.error || null }))
+    }, null, 2), "utf8");
+
+    for (const svg of debugAssets.svgs) {
+      fs.writeFileSync(`debug-seatmap-${svg.index}.svg`, svg.outerHTML, "utf8");
+    }
+
+    for (const canvas of debugAssets.canvases) {
+      if (!canvas.ok || !canvas.dataUrl) continue;
+      const base64 = canvas.dataUrl.split(",")[1];
+      fs.writeFileSync(`debug-canvas-${canvas.index}.png`, Buffer.from(base64, "base64"));
+    }
+
     const mapLocator = page.locator(".leaflet-container").first();
 
     await mapLocator.screenshot({
