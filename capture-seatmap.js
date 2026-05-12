@@ -351,11 +351,17 @@ async function prepareSeatmap(page, venue) {
     timeout: 15000,
   });
 
-  await zoomPlus.first().click({
-    force: true,
-  });
+  // echter Seatmap-Zoom, damit die interne Canvas-Detailstufe neu rendert
+  for (let z = 0; z < 3; z++) {
+    await zoomPlus.first().click({
+      force: true,
+    });
 
-  await page.waitForTimeout(800);
+    await page.waitForTimeout(1200);
+  }
+
+  // extra warten, damit Canvas/Repaint wirklich fertig ist
+  await page.waitForTimeout(3000);
 
   let dragDistance = 130;
   if (venue === "resi") dragDistance = 260;
