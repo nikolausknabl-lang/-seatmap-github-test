@@ -303,7 +303,16 @@ async function prepareSeatmap(page, venue) {
       break;
     }
 
-    await page.waitForTimeout(4000);
+    
+await page.waitForTimeout(4000);
+
+await page.screenshot({
+  path: "debug-eventlist.png",
+  fullPage: true
+});
+
+console.log("DEBUG SCREENSHOT GESPEICHERT");
+
 
     const pageText = await page.locator("body").innerText();
     const venue = detectVenue(pageText);
