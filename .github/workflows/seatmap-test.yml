@@ -7,28 +7,27 @@ jobs:
   screenshot:
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    container:
+      image: mcr.microsoft.com/playwright:v1.54.0-noble
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
 
       - name: Install dependencies
         run: |
           npm install
-          npx playwright install chromium --with-deps
+          npx playwright install chromium
 
       - name: Run screenshot test
-        run: npm run capture
+        run: |
+          node capture-seatmap.js
 
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: seatmap-screenshots
-          path: |
-            seatmap-*.png
-            *.png
+          path: "*.png"
