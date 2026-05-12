@@ -352,7 +352,7 @@ async function prepareSeatmap(page, venue) {
   });
 
   // echter Seatmap-Zoom, damit die interne Canvas-Detailstufe neu rendert
-  for (let z = 0; z < 3; z++) {
+  for (let z = 0; z < 5; z++) {
     await zoomPlus.first().click({
       force: true,
     });
