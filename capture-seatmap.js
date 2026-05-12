@@ -33,7 +33,12 @@ async function getTicketButtonCount(page) {
             style.visibility !== "hidden",
         };
       })
-      .filter((b) => b.visible && (b.text === "Karten" || b.text === "Restkarten"))
+      .filter((b) => b.visible && (
+  b.text === "Karten" ||
+  b.text === "Restkarten" ||
+  b.text === "Tickets" ||
+  b.text === "Remaining tickets"
+))
       .length;
   });
 }
@@ -160,7 +165,12 @@ async function clickEventButtonByIndex(page, index) {
             style.visibility !== "hidden",
         };
       })
-      .filter((b) => b.visible && (b.text === "Karten" || b.text === "Restkarten"))
+      .filter((b) => b.visible && (
+  b.text === "Karten" ||
+  b.text === "Restkarten" ||
+  b.text === "Tickets" ||
+  b.text === "Remaining tickets"
+))
       .sort((a, b) => a.y - b.y);
 
     if (!buttons[index]) {
