@@ -558,7 +558,41 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
       return { svgs, canvases };
     });
 
-    console.log("SVGs gefunden:", debugAssets.svgs.length);
+    
+    const layerDebug = await page.evaluate(() => {
+      const root = document.querySelector(".leaflet-container");
+      if (!root) return [];
+
+      return [...root.querySelectorAll("*")].map((el, index) => {
+        const r = el.getBoundingClientRect();
+        const cs = window.getComputedStyle(el);
+
+        return {
+          index,
+          tag: el.tagName,
+          className: String(el.className || ""),
+          id: el.id || "",
+          width: Math.round(r.width),
+          height: Math.round(r.height),
+          x: Math.round(r.x),
+          y: Math.round(r.y),
+          opacity: cs.opacity,
+          display: cs.display,
+          visibility: cs.visibility,
+          position: cs.position,
+          zIndex: cs.zIndex,
+          background: cs.backgroundColor,
+          pointerEvents: cs.pointerEvents,
+          text: (el.innerText || el.textContent || "").trim().slice(0, 120),
+          htmlStart: el.outerHTML.slice(0, 300),
+        };
+      }).filter(x => x.width > 0 || x.height > 0 || x.text);
+    });
+
+    fs.writeFileSync("debug-leaflet-layers.json", JSON.stringify(layerDebug, null, 2), "utf8");
+    console.log("Leaflet-Layer gedumpt:", layerDebug.length);
+
+console.log("SVGs gefunden:", debugAssets.svgs.length);
     console.log("Canvases gefunden:", debugAssets.canvases.length);
 
     fs.writeFileSync("debug-seatmap-assets.json", JSON.stringify({
