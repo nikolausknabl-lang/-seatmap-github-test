@@ -382,7 +382,7 @@ async function prepareSeatmap(page, venue) {
       width: 1600,
       height: 1200,
     },
-    deviceScaleFactor: 3,
+    deviceScaleFactor: 4,
   });
 
   const page = await context.newPage();
@@ -478,14 +478,14 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
       for (let i = 0; i < 10 && el; i++) {
         el.style.maxWidth = "none";
         el.style.maxHeight = "none";
-        el.style.width = "3000px";
-        el.style.height = "2200px";
+        el.style.width = "4000px";
+        el.style.height = "3000px";
         el.style.overflow = "visible";
         el = el.parentElement;
       }
 
-      map.style.width = "3000px";
-      map.style.height = "2200px";
+      map.style.width = "4000px";
+      map.style.height = "3000px";
 
       window.dispatchEvent(new Event("resize"));
 
