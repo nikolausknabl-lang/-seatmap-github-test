@@ -287,6 +287,14 @@ async function prepareSeatmap(page, venue) {
 
     await page.waitForTimeout(1600);
 
+    
+    await page.screenshot({
+      path: "debug-before-load-buttons.png",
+      fullPage: true,
+    });
+
+    console.log("DEBUG SCREENSHOT GESPEICHERT: debug-before-load-buttons.png");
+
     const loaded = await loadUntilButtonIndexExists(page, i);
 
     if (!loaded.ok) {
