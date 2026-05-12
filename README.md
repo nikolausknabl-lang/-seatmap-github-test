@@ -1,12 +1,13 @@
-# Seatmap GitHub Test v2
+# Seatmap GitHub Test v3
 
-Stufe 2:
-- GitHub Action startet Chromium
+Robuster Klick-Test:
 - öffnet Ticketshop
-- klickt den ersten Karten/Restkarten-Button
-- speichert Screenshots und HTML als Artifact
+- speichert Startseite
+- dump aller Buttons/Links
+- klickt ersten sichtbaren Karten/Restkarten-Button per Playwright und als Fallback per DOM-Event
+- speichert Screenshot/HTML/URL nach Klick
 
-Lokal testen:
+Lokal:
 
 ```bash
 npm install
