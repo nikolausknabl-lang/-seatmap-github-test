@@ -27,7 +27,10 @@ jobs:
           node capture-seatmap.js
 
       - name: Upload screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: seatmap-screenshots
-          path: |\n            *.png\n            *.csv
+          path: |
+            *.png
+            *.csv
