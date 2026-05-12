@@ -478,14 +478,14 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
       for (let i = 0; i < 8 && el; i++) {
         el.style.maxWidth = "none";
         el.style.maxHeight = "none";
-        el.style.width = "1500px";
-        el.style.height = "1050px";
+        el.style.width = "2500px";
+        el.style.height = "1800px";
         el.style.overflow = "visible";
         el = el.parentElement;
       }
 
-      map.style.width = "1500px";
-      map.style.height = "1050px";
+      map.style.width = "2500px";
+      map.style.height = "1800px";
 
       window.dispatchEvent(new Event("resize"));
 
