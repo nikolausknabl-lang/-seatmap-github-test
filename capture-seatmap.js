@@ -610,20 +610,28 @@ console.log("SVGs gefunden:", debugAssets.svgs.length);
       fs.writeFileSync(`debug-canvas-${canvas.index}.png`, Buffer.from(base64, "base64"));
     }
 
-    const mainCanvas = debugAssets.canvases.find((c) => c.ok && c.dataUrl);
+    const mapLocator = page.locator(".leaflet-container").first();
 
-    if (mainCanvas?.dataUrl) {
-      const base64 = mainCanvas.dataUrl.split(",")[1];
-      fs.writeFileSync(filename, Buffer.from(base64, "base64"));
-      console.log(`Direkter Canvas-Export gespeichert: ${filename}`);
-    } else {
-      const mapLocator = page.locator(".leaflet-container").first();
-
+    if (venue === "cuv") {
       await mapLocator.screenshot({
         path: filename,
       });
 
-      console.log(`Fallback Seatmap-Element-Screenshot gespeichert: ${filename}`);
+      console.log(`Cuv Komplett-Layer-Screenshot gespeichert: ${filename}`);
+    } else {
+      const mainCanvas = debugAssets.canvases.find((c) => c.ok && c.dataUrl);
+
+      if (mainCanvas?.dataUrl) {
+        const base64 = mainCanvas.dataUrl.split(",")[1];
+        fs.writeFileSync(filename, Buffer.from(base64, "base64"));
+        console.log(`Direkter Canvas-Export gespeichert: ${filename}`);
+      } else {
+        await mapLocator.screenshot({
+          path: filename,
+        });
+
+        console.log(`Fallback Seatmap-Element-Screenshot gespeichert: ${filename}`);
+      }
     }
 
     rows.push([
