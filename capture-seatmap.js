@@ -193,6 +193,111 @@ async function clickEventButtonByIndex(page, index) {
   }, index);
 }
 
+
+async function clickEventButtonBySearch(page, search) {
+  return await page.evaluate((search) => {
+    const elements = [...document.querySelectorAll("button, a, [role='button']")];
+
+    const buttons = elements
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        const text = (el.innerText || el.textContent || "").trim();
+        const style = window.getComputedStyle(el);
+
+        let container = el;
+        for (let i = 0; i < 8; i++) {
+          if (!container.parentElement) break;
+          container = container.parentElement;
+          const blockText = (container.innerText || container.textContent || "").trim();
+
+          if (
+            blockText.length > 80 &&
+            blockText.length < 2500 &&
+            /Tickets|Remaining tickets|Karten|Restkarten/i.test(blockText)
+          ) {
+            break;
+          }
+        }
+
+        const blockText = (container.innerText || container.textContent || "").trim();
+
+        return {
+          el,
+          text,
+          blockText,
+          x: r.x,
+          y: r.y + window.scrollY,
+          w: r.width,
+          h: r.height,
+          visible:
+            r.width > 120 &&
+            r.height > 30 &&
+            r.x > 800 &&
+            style.display !== "none" &&
+            style.visibility !== "hidden",
+        };
+      })
+      .filter((b) => {
+        return (
+          b.visible &&
+          (
+            b.text === "Karten" ||
+            b.text === "Restkarten" ||
+            b.text === "Tickets" ||
+            b.text === "Remaining tickets"
+          )
+        );
+      })
+      .sort((a, b) => a.y - b.y);
+
+    const titleNeedle = search.title.toLowerCase();
+    const venueNeedle = search.venue.toLowerCase();
+    const dateNeedles = search.dateNeedles.map((x) => x.toLowerCase());
+
+    const debug = buttons.map((b, index) => ({
+      index,
+      text: b.text,
+      y: b.y,
+      blockText: b.blockText.slice(0, 500),
+    }));
+
+    const foundIndex = buttons.findIndex((b) => {
+      const hay = b.blockText.toLowerCase();
+      return (
+        hay.includes(titleNeedle) &&
+        hay.includes(venueNeedle) &&
+        dateNeedles.some((d) => hay.includes(d))
+      );
+    });
+
+    if (foundIndex < 0) {
+      return {
+        ok: false,
+        count: buttons.length,
+        debug,
+      };
+    }
+
+    const target = buttons[foundIndex];
+
+    target.el.scrollIntoView({
+      block: "center",
+      inline: "center",
+    });
+
+    target.el.click();
+
+    return {
+      ok: true,
+      count: buttons.length,
+      index: foundIndex,
+      text: target.text,
+      y: target.y,
+      blockText: target.blockText.slice(0, 500),
+    };
+  }, search);
+}
+
 function detectVenue(pageText) {
   if (pageText.includes("Marstall")) return "marstall";
   if (pageText.includes("Cuvilli")) return "cuv";
@@ -312,13 +417,21 @@ async function prepareSeatmap(page, venue) {
       break;
     }
 
-    const clickResult = await clickEventButtonByIndex(page, i);
+    const clickResult = await clickEventButtonBySearch(page, {
+      title: "Bernarda Albas Haus",
+      venue: "Cuvilli",
+      dateNeedles: ["15.05.", "15. Mai", "May 15"]
+    });
 
-    console.log("Klick-Ergebnis:", clickResult);
+    console.log("Such-Klick-Ergebnis:", JSON.stringify(clickResult, null, 2));
 
     if (!clickResult.ok) {
-      console.log(`Klick nicht möglich. Gefunden: ${clickResult.count}`);
-      break;
+      await page.screenshot({
+        path: "98-search-not-found.png",
+        fullPage: true,
+      });
+
+      throw new Error(`Gesuchte Vorstellung nicht gefunden. Buttons: ${clickResult.count}`);
     }
 
     
