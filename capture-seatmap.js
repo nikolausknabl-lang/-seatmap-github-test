@@ -351,17 +351,29 @@ async function prepareSeatmap(page, venue) {
     timeout: 15000,
   });
 
-  // echter Seatmap-Zoom, damit die interne Canvas-Detailstufe neu rendert
-  for (let z = 0; z < 4; z++) {
+  // Cuv rendert empfindlicher: weniger Zoom, längere Stabilisierung
+  const zoomSteps = venue === "cuv" ? 2 : 4;
+
+  for (let z = 0; z < zoomSteps; z++) {
     await zoomPlus.first().click({
       force: true,
     });
 
-    await page.waitForTimeout(1200);
+    await page.waitForTimeout(1800);
   }
 
-  // extra warten, damit Canvas/Repaint wirklich fertig ist
-  await page.waitForTimeout(3000);
+  if (venue === "cuv") {
+    console.log("Cuv: Repaint durch kleinen Drag triggern");
+
+    await page.mouse.move(700, 700);
+    await page.mouse.down();
+    await page.mouse.move(735, 700, { steps: 10 });
+    await page.mouse.up();
+
+    await page.waitForTimeout(8000);
+  } else {
+    await page.waitForTimeout(3000);
+  }
 
   let dragDistance = 130;
   if (venue === "resi") dragDistance = 260;
