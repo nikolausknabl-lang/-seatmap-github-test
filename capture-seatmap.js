@@ -1,4 +1,4 @@
-const { chromium } = require("playwright");
+import { chromium } from "playwright";
 
 const URL = "https://tickets.staatstheater.bayern/rth.webshop/webticket/eventlist";
 
