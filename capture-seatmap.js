@@ -7,7 +7,7 @@ async function main() {
 
   const page = await browser.newPage({
     viewport: {
-      width: 1600,
+      width: 1800,
       height: 2600
     }
   });
@@ -37,7 +37,7 @@ async function main() {
     fullPage: true
   });
 
-  console.log("Suche echten Event-Tickets-Button...");
+  console.log("Suche Event-Ticketbutton...");
 
   const ticketButtons = page.locator("a, button").filter({
     hasText: /Tickets|Karten|Restkarten/i
@@ -45,24 +45,44 @@ async function main() {
 
   const count = await ticketButtons.count();
 
-  console.log("Gefundene Buttons:", count);
+  console.log("Buttons gefunden:", count);
 
-  if (count === 0) {
-    throw new Error("Keine Ticket-Buttons gefunden");
+  if (count < 2) {
+    throw new Error("Keine echten Eventbuttons gefunden");
   }
 
-  await ticketButtons.nth(0).scrollIntoViewIfNeeded();
+  // Erstes echtes Event-Ticket
+  const target = ticketButtons.nth(1);
 
-  await ticketButtons.nth(0).click({
+  await target.scrollIntoViewIfNeeded();
+
+  await target.click({
     force: true
   });
 
-  console.log("Ticket-Button geklickt");
+  console.log("Eventbutton geklickt");
 
-  await page.waitForTimeout(6000);
+  await page.waitForTimeout(10000);
 
   await page.screenshot({
-    path: "02-after-ticket-click.png",
+    path: "02-after-event-click.png",
+    fullPage: true
+  });
+
+  console.log("Warte auf Seatmap oder Weiter-Button...");
+
+  try {
+    await page.locator(".leaflet-container").waitFor({
+      timeout: 15000
+    });
+
+    console.log("Seatmap erkannt");
+  } catch {
+    console.log("Keine Seatmap erkannt");
+  }
+
+  await page.screenshot({
+    path: "03-final.png",
     fullPage: true
   });
 
