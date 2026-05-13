@@ -352,7 +352,7 @@ async function prepareSeatmap(page, venue) {
   });
 
   // Cuv rendert empfindlicher: weniger Zoom, längere Stabilisierung
-  const zoomSteps = venue === "cuv" ? 2 : 4;
+  const zoomSteps = 4;
 
   for (let z = 0; z < zoomSteps; z++) {
     await zoomPlus.first().click({
