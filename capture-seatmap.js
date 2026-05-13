@@ -335,11 +335,6 @@ function extractTitle(pageText) {
 }
 
 async function prepareSeatmap(page, venue) {
-  if (venue === "marstall") {
-    console.log("Marstall erkannt → kein Zoom");
-    return;
-  }
-
   console.log("Klicke Zoom + ...");
 
   const zoomPlus = page.locator(
