@@ -519,7 +519,8 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
       }
     });
 
-    await page.waitForTimeout(1500);
+    console.log("Warte nach Layout-Vergrößerung auf Leaflet-Tiles ...");
+    await page.waitForTimeout(10000);
 
     await page.screenshot({
       path: "debug-expanded-layout.png",
