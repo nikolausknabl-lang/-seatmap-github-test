@@ -81,7 +81,7 @@ async function clickMoreIfPossible(page) {
   });
 
   if (clicked) {
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(500);
   }
 
   return clicked;
@@ -359,7 +359,7 @@ async function prepareSeatmap(page, venue) {
       force: true,
     });
 
-    await page.waitForTimeout(1800);
+    await page.waitForTimeout(700);
   }
 
   if (venue === "cuv") {
@@ -370,7 +370,7 @@ async function prepareSeatmap(page, venue) {
     await page.mouse.move(735, 700, { steps: 10 });
     await page.mouse.up();
 
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(500);
   } else {
     await page.waitForTimeout(3000);
   }
@@ -386,7 +386,7 @@ async function prepareSeatmap(page, venue) {
   await page.mouse.move(390 + dragDistance, 820, { steps: 25 });
   await page.mouse.up();
 
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(400);
 }
 
 (async () => {
@@ -613,26 +613,18 @@ console.log("SVGs gefunden:", debugAssets.svgs.length);
 
     const mapLocator = page.locator(".leaflet-container").first();
 
-    if (venue === "cuv") {
+    const mainCanvas = debugAssets.canvases.find((c) => c.ok && c.dataUrl);
+
+    if (mainCanvas?.dataUrl) {
+      const base64 = mainCanvas.dataUrl.split(",")[1];
+      fs.writeFileSync(filename, Buffer.from(base64, "base64"));
+      console.log(`Direkter Canvas-Export gespeichert: ${filename}`);
+    } else {
       await mapLocator.screenshot({
         path: filename,
       });
 
-      console.log(`Cuv Komplett-Layer-Screenshot gespeichert: ${filename}`);
-    } else {
-      const mainCanvas = debugAssets.canvases.find((c) => c.ok && c.dataUrl);
-
-      if (mainCanvas?.dataUrl) {
-        const base64 = mainCanvas.dataUrl.split(",")[1];
-        fs.writeFileSync(filename, Buffer.from(base64, "base64"));
-        console.log(`Direkter Canvas-Export gespeichert: ${filename}`);
-      } else {
-        await mapLocator.screenshot({
-          path: filename,
-        });
-
-        console.log(`Fallback Seatmap-Element-Screenshot gespeichert: ${filename}`);
-      }
+      console.log(`Fallback Seatmap-Element-Screenshot gespeichert: ${filename}`);
     }
 
     rows.push([
