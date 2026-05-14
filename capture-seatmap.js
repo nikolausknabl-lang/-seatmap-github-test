@@ -462,9 +462,9 @@ async function prepareSeatmap(page, venue) {
     }
 
     const clickResult = await clickEventButtonBySearch(page, {
-      title: "Eine Zierde für den Verein",
+      title: "Automatenbüfett",
       venue: "Marstall",
-      dateNeedles: ["16.05.", "May 16"]
+      dateNeedles: ["15.05.", "May 15"]
     });
 
     console.log("Such-Klick-Ergebnis:", JSON.stringify(clickResult, null, 2));
