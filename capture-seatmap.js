@@ -462,9 +462,9 @@ async function prepareSeatmap(page, venue) {
     }
 
     const clickResult = await clickEventButtonBySearch(page, {
-      title: "Die Rückseite des Lebens",
-      venue: "Residenztheater",
-      dateNeedles: ["15.05.", "May 15"]
+      title: "Ein sanfter Tod",
+      venue: "Marstall",
+      dateNeedles: ["14.05.", "May 14"]
     });
 
     console.log("Such-Klick-Ergebnis:", JSON.stringify(clickResult, null, 2));
