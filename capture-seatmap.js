@@ -462,8 +462,8 @@ async function prepareSeatmap(page, venue) {
     }
 
     const clickResult = await clickEventButtonBySearch(page, {
-      title: "Bernarda Albas Haus",
-      venue: "Cuvilli",
+      title: "Die Rückseite des Lebens",
+      venue: "Residenztheater",
       dateNeedles: ["15.05.", "May 15"]
     });
 
