@@ -334,6 +334,47 @@ function extractTitle(pageText) {
   return "";
 }
 
+function safeFilePart(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/Ä/g, "Ae")
+    .replace(/Ö/g, "Oe")
+    .replace(/Ü/g, "Ue")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "unknown";
+}
+
+function extractEventMeta(blockText, venueKey) {
+  const lines = String(blockText || "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const title = lines[0] || "Vorstellung";
+  const allText = lines.join(" ");
+  const dateMatch = allText.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  const timeMatch = allText.match(/(\d{1,2}:\d{2})/);
+
+  const date = dateMatch
+    ? `${dateMatch[3]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[1].padStart(2, "0")}`
+    : "date-unknown";
+
+  const time = timeMatch ? timeMatch[1].replace(":", "-") : "time-unknown";
+
+  return {
+    title,
+    date,
+    time,
+    venue: venueKey || "venue-unknown",
+  };
+}
+
 async function prepareSeatmap(page, venue) {
   console.log("Klicke Zoom + ...");
 
@@ -400,10 +441,6 @@ async function prepareSeatmap(page, venue) {
 
   const page = await context.newPage();
 
-  const rows = [
-    ["index", "source_index", "file", "venue", "button", "title", "url"].map(csvEscape).join(",")
-  ];
-
   let saved = 0;
 
   for (let i = 0; i < MAX_EVENTS; i++) {
@@ -416,13 +453,6 @@ async function prepareSeatmap(page, venue) {
 
     await page.waitForTimeout(1600);
 
-    
-    await page.screenshot({
-      path: "debug-before-load-buttons.png",
-      fullPage: true,
-    });
-
-    console.log("DEBUG SCREENSHOT GESPEICHERT: debug-before-load-buttons.png");
 
     const loaded = await loadUntilButtonIndexExists(page, i);
 
@@ -440,24 +470,8 @@ async function prepareSeatmap(page, venue) {
     console.log("Such-Klick-Ergebnis:", JSON.stringify(clickResult, null, 2));
 
     if (!clickResult.ok) {
-      await page.screenshot({
-        path: "98-search-not-found.png",
-        fullPage: true,
-      });
-
       throw new Error(`Gesuchte Vorstellung nicht gefunden. Buttons: ${clickResult.count}`);
     }
-
-    
-await page.waitForTimeout(4000);
-
-await page.screenshot({
-  path: "debug-eventlist.png",
-  fullPage: true
-});
-
-console.log("DEBUG SCREENSHOT GESPEICHERT");
-
 
     const pageText = await page.locator("body").innerText();
     const venue = detectVenue(pageText);
@@ -473,8 +487,9 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
 
     saved += 1;
 
-    const filename = `seatmap-${String(saved).padStart(3, "0")}-${venue}.png`;
-    const title = extractTitle(pageText);
+    const meta = extractEventMeta(clickResult.blockText, venue);
+    const filename = `seatmap-${String(saved).padStart(3, "0")}-${meta.venue}_${safeFilePart(meta.title)}_${meta.date}_${meta.time}.png`;
+    const title = meta.title;
     const url = page.url();
 
     console.log("Versuche Seatmap-Container zu vergrößern...");
@@ -517,11 +532,6 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
     console.log("Warte nach Layout-Vergrößerung auf Leaflet-Tiles ...");
     await page.waitForTimeout(10000);
 
-    await page.screenshot({
-      path: "debug-expanded-layout.png",
-      fullPage: true,
-    });
-
     const debugAssets = await page.evaluate(() => {
       const svgs = [...document.querySelectorAll(".leaflet-container svg, svg")].map((svg, index) => ({
         index,
@@ -554,57 +564,6 @@ console.log("DEBUG SCREENSHOT GESPEICHERT");
       return { svgs, canvases };
     });
 
-    
-    const layerDebug = await page.evaluate(() => {
-      const root = document.querySelector(".leaflet-container");
-      if (!root) return [];
-
-      return [...root.querySelectorAll("*")].map((el, index) => {
-        const r = el.getBoundingClientRect();
-        const cs = window.getComputedStyle(el);
-
-        return {
-          index,
-          tag: el.tagName,
-          className: String(el.className || ""),
-          id: el.id || "",
-          width: Math.round(r.width),
-          height: Math.round(r.height),
-          x: Math.round(r.x),
-          y: Math.round(r.y),
-          opacity: cs.opacity,
-          display: cs.display,
-          visibility: cs.visibility,
-          position: cs.position,
-          zIndex: cs.zIndex,
-          background: cs.backgroundColor,
-          pointerEvents: cs.pointerEvents,
-          text: (el.innerText || el.textContent || "").trim().slice(0, 120),
-          htmlStart: el.outerHTML.slice(0, 300),
-        };
-      }).filter(x => x.width > 0 || x.height > 0 || x.text);
-    });
-
-    fs.writeFileSync("debug-leaflet-layers.json", JSON.stringify(layerDebug, null, 2), "utf8");
-    console.log("Leaflet-Layer gedumpt:", layerDebug.length);
-
-console.log("SVGs gefunden:", debugAssets.svgs.length);
-    console.log("Canvases gefunden:", debugAssets.canvases.length);
-
-    fs.writeFileSync("debug-seatmap-assets.json", JSON.stringify({
-      svgs: debugAssets.svgs.map(s => ({ index: s.index, width: s.width, height: s.height, length: s.outerHTML.length })),
-      canvases: debugAssets.canvases.map(c => ({ index: c.index, ok: c.ok, width: c.width, height: c.height, error: c.error || null }))
-    }, null, 2), "utf8");
-
-    for (const svg of debugAssets.svgs) {
-      fs.writeFileSync(`debug-seatmap-${svg.index}.svg`, svg.outerHTML, "utf8");
-    }
-
-    for (const canvas of debugAssets.canvases) {
-      if (!canvas.ok || !canvas.dataUrl) continue;
-      const base64 = canvas.dataUrl.split(",")[1];
-      fs.writeFileSync(`debug-canvas-${canvas.index}.png`, Buffer.from(base64, "base64"));
-    }
 
     const mapLocator = page.locator(".leaflet-container").first();
 
@@ -621,21 +580,9 @@ console.log("SVGs gefunden:", debugAssets.svgs.length);
 
       console.log(`Fallback Seatmap-Element-Screenshot gespeichert: ${filename}`);
     }
-
-    rows.push([
-      saved,
-      i + 1,
-      filename,
-      venue,
-      clickResult.text,
-      title,
-      url,
-    ].map(csvEscape).join(","));
   }
 
-  fs.writeFileSync("seatmap-meta.csv", rows.join("\n"), "utf8");
-  console.log("\nMeta gespeichert: seatmap-meta.csv");
-  console.log(`Screenshots gespeichert: ${saved}`);
+  console.log(`\nSeatmap gespeichert: ${saved}`);
 
   await browser.close();
 })();
