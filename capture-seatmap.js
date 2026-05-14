@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 import fs from "fs";
 
 const START_URL = "https://tickets.staatstheater.bayern/rth.webshop/";
-const MAX_EVENTS = 1;
+const MAX_EVENTS = Number(process.env.MAX_EVENTS || 999);
 
 function csvEscape(value) {
   const s = String(value ?? "");
@@ -189,6 +189,159 @@ async function clickEventButtonByIndex(page, index) {
       count: buttons.length,
       text: buttons[index].text,
       y: buttons[index].y,
+    };
+  }, index);
+}
+
+
+async function getFirstPageAvailableEvents(page) {
+  return await page.evaluate(() => {
+    const elements = [...document.querySelectorAll("button, a, [role='button']")];
+
+    const ticketTexts = new Set([
+      "Karten",
+      "Restkarten",
+      "Tickets",
+      "Remaining tickets",
+    ]);
+
+    const rows = elements
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        const text = (el.innerText || el.textContent || "").trim();
+        const style = window.getComputedStyle(el);
+
+        let container = el;
+        for (let i = 0; i < 8; i++) {
+          if (!container.parentElement) break;
+          container = container.parentElement;
+          const blockText = (container.innerText || container.textContent || "").trim();
+
+          if (
+            blockText.length > 80 &&
+            blockText.length < 2500 &&
+            /Tickets|Remaining tickets|Karten|Restkarten|Ausverkauft|Sold out/i.test(blockText)
+          ) {
+            break;
+          }
+        }
+
+        const blockText = (container.innerText || container.textContent || "").trim();
+        const isSoldOut = /Ausverkauft|Sold out/i.test(blockText);
+
+        return {
+          el,
+          text,
+          blockText,
+          x: r.x,
+          y: r.y + window.scrollY,
+          w: r.width,
+          h: r.height,
+          visible:
+            r.width > 120 &&
+            r.height > 30 &&
+            r.x > 800 &&
+            style.display !== "none" &&
+            style.visibility !== "hidden",
+          isSoldOut,
+        };
+      })
+      .filter((b) => b.visible && ticketTexts.has(b.text))
+      .filter((b) => !b.isSoldOut)
+      .sort((a, b) => a.y - b.y);
+
+    return rows.map((b, index) => ({
+      index,
+      text: b.text,
+      y: b.y,
+      blockText: b.blockText.slice(0, 500),
+    }));
+  });
+}
+
+async function clickFirstPageAvailableEventByIndex(page, index) {
+  return await page.evaluate((index) => {
+    const elements = [...document.querySelectorAll("button, a, [role='button']")];
+
+    const ticketTexts = new Set([
+      "Karten",
+      "Restkarten",
+      "Tickets",
+      "Remaining tickets",
+    ]);
+
+    const buttons = elements
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        const text = (el.innerText || el.textContent || "").trim();
+        const style = window.getComputedStyle(el);
+
+        let container = el;
+        for (let i = 0; i < 8; i++) {
+          if (!container.parentElement) break;
+          container = container.parentElement;
+          const blockText = (container.innerText || container.textContent || "").trim();
+
+          if (
+            blockText.length > 80 &&
+            blockText.length < 2500 &&
+            /Tickets|Remaining tickets|Karten|Restkarten|Ausverkauft|Sold out/i.test(blockText)
+          ) {
+            break;
+          }
+        }
+
+        const blockText = (container.innerText || container.textContent || "").trim();
+        const isSoldOut = /Ausverkauft|Sold out/i.test(blockText);
+
+        return {
+          el,
+          text,
+          blockText,
+          x: r.x,
+          y: r.y + window.scrollY,
+          w: r.width,
+          h: r.height,
+          visible:
+            r.width > 120 &&
+            r.height > 30 &&
+            r.x > 800 &&
+            style.display !== "none" &&
+            style.visibility !== "hidden",
+          isSoldOut,
+        };
+      })
+      .filter((b) => b.visible && ticketTexts.has(b.text))
+      .filter((b) => !b.isSoldOut)
+      .sort((a, b) => a.y - b.y);
+
+    const debug = buttons.map((b, i) => ({
+      index: i,
+      text: b.text,
+      y: b.y,
+      blockText: b.blockText.slice(0, 500),
+    }));
+
+    if (!buttons[index]) {
+      return { ok: false, count: buttons.length, debug };
+    }
+
+    const target = buttons[index];
+
+    target.el.scrollIntoView({
+      block: "center",
+      inline: "center",
+    });
+
+    target.el.click();
+
+    return {
+      ok: true,
+      count: buttons.length,
+      index,
+      text: target.text,
+      y: target.y,
+      blockText: target.blockText.slice(0, 500),
     };
   }, index);
 }
@@ -454,23 +607,23 @@ async function prepareSeatmap(page, venue) {
     await page.waitForTimeout(1600);
 
 
-    const loaded = await loadUntilButtonIndexExists(page, i);
+    const firstPageEvents = await getFirstPageAvailableEvents(page);
+    console.log(`Erste Seite: ${firstPageEvents.length} verfügbare Vorstellungen mit Karten/Restkarten`);
 
-    if (!loaded.ok) {
-      console.log(`Keine weitere Karten-Kachel. Max gesehen: ${loaded.maxSeen}`);
+    if (i >= firstPageEvents.length || i >= MAX_EVENTS) {
+      console.log("Keine weitere verfügbare Vorstellung auf der ersten Seite.");
       break;
     }
 
-    const clickResult = await clickEventButtonBySearch(page, {
-      title: "Untertan",
-      venue: "Cuvilliéstheater",
-      dateNeedles: []
-    });
+    console.log("Nächste verfügbare Vorstellung:", JSON.stringify(firstPageEvents[i], null, 2));
 
-    console.log("Such-Klick-Ergebnis:", JSON.stringify(clickResult, null, 2));
+    const clickResult = await clickFirstPageAvailableEventByIndex(page, i);
+
+    console.log("Klick-Ergebnis:", JSON.stringify(clickResult, null, 2));
 
     if (!clickResult.ok) {
-      throw new Error(`Gesuchte Vorstellung nicht gefunden. Buttons: ${clickResult.count}`);
+      console.log(`Vorstellung ${i + 1} konnte nicht geklickt werden. Weiter.`);
+      continue;
     }
 
     const pageText = await page.locator("body").innerText();
