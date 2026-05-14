@@ -474,7 +474,11 @@ async function prepareSeatmap(page, venue) {
     }
 
     const pageText = await page.locator("body").innerText();
-    const venue = detectVenue(pageText);
+    let venue = detectVenue(pageText);
+
+    if (venue === "other" && /Marstall/i.test(clickResult.blockText || "")) venue = "marstall";
+    if (venue === "other" && /Cuvilli/i.test(clickResult.blockText || "")) venue = "cuv";
+    if (venue === "other" && /Residenztheater/i.test(clickResult.blockText || "")) venue = "resi";
 
     console.log("Venue:", venue);
 
