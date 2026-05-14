@@ -31,8 +31,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: seatmap-screenshots
-          path: |
-            *.png
-            *.csv
-            *.svg
-            *.json
+          path: seatmap-output/
