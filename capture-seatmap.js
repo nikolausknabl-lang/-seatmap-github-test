@@ -81,7 +81,7 @@ async function clickMoreIfPossible(page) {
   });
 
   if (clicked) {
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(180);
   }
 
   return clicked;
@@ -395,7 +395,7 @@ async function prepareSeatmap(page, venue) {
       force: true,
     });
 
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(220);
   }
 
   if (venue === "cuv") {
@@ -406,7 +406,7 @@ async function prepareSeatmap(page, venue) {
     await page.mouse.move(735, 700, { steps: 10 });
     await page.mouse.up();
 
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(180);
   } else {
     await page.waitForTimeout(3000);
   }
