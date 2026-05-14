@@ -462,9 +462,9 @@ async function prepareSeatmap(page, venue) {
     }
 
     const clickResult = await clickEventButtonBySearch(page, {
-      title: "Gschichtn vom Brandner Kaspar",
-      venue: "Residenztheater",
-      dateNeedles: ["16.05.", "May 16"]
+      title: "Untertan",
+      venue: "Cuvilliéstheater",
+      dateNeedles: []
     });
 
     console.log("Such-Klick-Ergebnis:", JSON.stringify(clickResult, null, 2));
