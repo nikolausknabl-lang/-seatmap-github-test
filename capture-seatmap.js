@@ -488,7 +488,7 @@ async function prepareSeatmap(page, venue) {
     saved += 1;
 
     const meta = extractEventMeta(clickResult.blockText, venue);
-    const filename = `seatmap-${String(saved).padStart(3, "0")}-${meta.venue}_${safeFilePart(meta.title)}_${meta.date}_${meta.time}.png`;
+    const filename = `${meta.venue}_${safeFilePart(meta.title)}_${meta.date}_${meta.time}.png`;
     const title = meta.title;
     const url = page.url();
 
