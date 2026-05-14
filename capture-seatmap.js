@@ -627,6 +627,18 @@ async function prepareSeatmap(page, venue) {
     }
 
     const pageText = await page.locator("body").innerText();
+
+    if (/ausverkauft|sold out/i.test(pageText)) {
+      console.log("Vorstellung ist ausverkauft -> Textdatei erstellen");
+
+      const meta = extractEventMeta(clickResult.blockText || pageText, "soldout");
+      const txtName = `${meta.venue}_${safeFilePart(meta.title)}_${meta.date}_${meta.time}.txt`;
+
+      fs.writeFileSync(txtName, "Ausverkauft\n");
+
+      console.log(`Gespeichert: ${txtName}`);
+      continue;
+    }
     let venue = detectVenue(pageText);
 
     if (venue === "other" && /Marstall/i.test(clickResult.blockText || "")) venue = "marstall";
