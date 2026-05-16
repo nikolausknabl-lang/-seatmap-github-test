@@ -24,7 +24,7 @@ jobs:
 
       - name: Run screenshot test
         run: |
-          node capture-seatmap.js
+          node capture-seatmap-all-events.js
 
       - name: Upload screenshots
         if: always()
