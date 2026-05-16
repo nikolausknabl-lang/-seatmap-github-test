@@ -225,7 +225,7 @@ async function getEventCards(page) {
         const blockText = normalize(container.innerText || container.textContent || "");
         const hasDate = /\b\d{1,2}\.\d{1,2}\.\d{4}\b/.test(blockText) || /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\./i.test(blockText);
         const hasTime = /\b\d{1,2}:\d{2}\b/.test(blockText);
-        const hasVenue = /Residenztheater|Cuvilli|Marstall/i.test(blockText);
+        const hasVenue = /Residenztheater|Cuvilli|Marstall|Zur schönen Aussicht|Zur schoenen Aussicht|Schöne Aussicht|Schoene Aussicht|Ort wird noch bekannt gegeben/i.test(blockText);
         const hasStatus = /Karten|Restkarten|Tickets|Remaining tickets|Ausverkauft|Sold out|verkauft/i.test(blockText);
 
         if (blockText.length > 40 && blockText.length < 450 && hasStatus && (hasDate || hasTime) && hasVenue) {
@@ -432,7 +432,7 @@ async function clickEventCardByIndex(page, index, expectedMeta) {
         const blockText = normalize(container.innerText || container.textContent || "");
         const hasDate = /\b\d{1,2}\.\d{1,2}\.\d{4}\b/.test(blockText) || /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\./i.test(blockText);
         const hasTime = /\b\d{1,2}:\d{2}\b/.test(blockText);
-        const hasVenue = /Residenztheater|Cuvilli|Marstall/i.test(blockText);
+        const hasVenue = /Residenztheater|Cuvilli|Marstall|Zur schönen Aussicht|Zur schoenen Aussicht|Schöne Aussicht|Schoene Aussicht|Ort wird noch bekannt gegeben/i.test(blockText);
         const hasStatus = /Karten|Restkarten|Tickets|Remaining tickets|Ausverkauft|Sold out|verkauft/i.test(blockText);
 
         if (blockText.length > 40 && blockText.length < 450 && hasStatus && (hasDate || hasTime) && hasVenue) {
