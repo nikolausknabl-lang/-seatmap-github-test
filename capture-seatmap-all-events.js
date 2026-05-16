@@ -1142,6 +1142,8 @@ async function savePreviewSeatmapImage(page, filename) {
     if (venue === "other" && /Residenztheater/i.test(clickResult.blockText || "")) venue = "resi";
 
     console.log("Venue:", venue);
+    // marstall-salon + aussicht werden jetzt aktiv verarbeitet
+    // und sollen PNGs erzeugen statt ignored/unsupported zu werden
 
     if (!["resi", "cuv", "marstall", "marstall-salon", "aussicht"].includes(venue)) {
       console.log("Andere Spielstätte → überspringe");
