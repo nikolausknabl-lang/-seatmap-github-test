@@ -205,7 +205,14 @@ async function getEventCards(page) {
 
     function venueKeyFromText(text) {
       if (/Marstall Salon/i.test(text)) return "marstall-salon";
-      if (/Zur schönen Aussicht|Schöne Aussicht|Zur schoenen Aussicht|Schoene Aussicht/i.test(text)) return "aussicht";
+      if (
+        /Zur schönen Aussicht/i.test(text) ||
+        /Zur schoenen Aussicht/i.test(text) ||
+        /Schöne Aussicht/i.test(text) ||
+        /Schoene Aussicht/i.test(text)
+      ) {
+        return "aussicht";
+      }
       if (/Marstall/i.test(text)) return "marstall";
       if (/Cuvilli/i.test(text)) return "cuv";
       if (/Residenztheater/i.test(text)) return "resi";
@@ -404,7 +411,14 @@ async function clickEventCardByIndex(page, index, expectedMeta) {
 
     function venueKeyFromText(text) {
       if (/Marstall Salon/i.test(text)) return "marstall-salon";
-      if (/Zur schönen Aussicht|Schöne Aussicht|Zur schoenen Aussicht|Schoene Aussicht/i.test(text)) return "aussicht";
+      if (
+        /Zur schönen Aussicht/i.test(text) ||
+        /Zur schoenen Aussicht/i.test(text) ||
+        /Schöne Aussicht/i.test(text) ||
+        /Schoene Aussicht/i.test(text)
+      ) {
+        return "aussicht";
+      }
       if (/Marstall/i.test(text)) return "marstall";
       if (/Cuvilli/i.test(text)) return "cuv";
       if (/Residenztheater/i.test(text)) return "resi";
