@@ -5,6 +5,7 @@ import path from "path";
 const START_URL = "https://tickets.staatstheater.bayern/rth.webshop/";
 const MAX_EVENTS = Number(process.env.MAX_EVENTS || 999);
 const OUTPUT_ROOT = path.join(process.cwd(), "seatmap-output");
+const CAPTURED_AT = new Date().toISOString();
 const RUN_TIMESTAMP = new Date()
   .toISOString()
   .replace("T", "_")
@@ -28,10 +29,154 @@ function outputPath(filename) {
   return path.join(OUTPUT_DIR, filename);
 }
 
-function writeMarkerFile(filenameBase, contents) {
+function normalizeTitle(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function getVenueLabel(venue) {
+  const key = String(venue || "").trim().toLowerCase();
+  if (key === "resi") return "Residenztheater";
+  if (key === "cuv") return "Cuvilliéstheater";
+  if (key === "marstall") return "Marstall";
+  if (key === "marstall-salon" || key === "marstall_salon") return "Marstall Salon";
+  if (key === "aussicht") return "Zur schönen Aussicht";
+  return venue || "";
+}
+
+function getNormalizedStartTime(startTime) {
+  const text = String(startTime || "").trim();
+  if (!text) return "";
+  const match = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (match) {
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    const second = match[3] ? Number(match[3]) : 0;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
+  }
+  const fallback = text.replace("-", ":");
+  if (/^\d{1,2}:\d{2}$/.test(fallback)) {
+    return `${fallback}:00`;
+  }
+  return fallback;
+}
+
+function extractTicketshopEventId(ticketshopUrl) {
+  if (!ticketshopUrl) return null;
+  try {
+    const url = new URL(ticketshopUrl);
+    const candidates = [
+      "event_id",
+      "eventId",
+      "event",
+      "id",
+      "offerId",
+      "productId",
+      "performanceId",
+    ];
+    for (const key of candidates) {
+      const value = url.searchParams.get(key);
+      if (value) return value;
+    }
+
+    const pathMatch = url.pathname.match(/(?:event|events|offer|offers|performance|performances)\/([A-Za-z0-9_-]+)/i);
+    if (pathMatch) return pathMatch[1];
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function buildSidecarPayload({
+  filenameBase,
+  screenshotFile = null,
+  textFile = null,
+  captureStatus,
+  displayTitle,
+  titleRaw,
+  normalizedTitle,
+  venue,
+  sourceDate,
+  startTime,
+  ticketshopUrl = null,
+  ticketshopEventId = null,
+}) {
+  const title = displayTitle || titleRaw || filenameBase;
+  const normalizedVenue = String(venue || "").trim().toLowerCase();
+  return {
+    schema_version: 1,
+    captured_at: CAPTURED_AT,
+    filename_base: filenameBase,
+    screenshot_file: screenshotFile,
+    text_file: textFile,
+    capture_status: captureStatus,
+    display_title: displayTitle || title,
+    title_raw: titleRaw || title,
+    normalized_title: normalizedTitle || normalizeTitle(title),
+    venue: normalizedVenue,
+    venue_label: getVenueLabel(normalizedVenue),
+    source_date: sourceDate || "",
+    start_time: getNormalizedStartTime(startTime),
+    ticketshop_url: ticketshopUrl,
+    ticketshop_event_id: ticketshopEventId,
+    title,
+    date: sourceDate || "",
+    time: getNormalizedStartTime(startTime),
+  };
+}
+
+function writeSidecarJson(filenameBase, payload) {
+  const jsonPath = outputPath(`${filenameBase}.json`);
+  fs.writeFileSync(jsonPath, `${JSON.stringify(payload, null, 2)}\n`);
+  return jsonPath;
+}
+
+function writeCaptureMarker(filenameBase, contents, sidecarPayload) {
   const txtPath = outputPath(`${filenameBase}.txt`);
   fs.writeFileSync(txtPath, `${contents}\n`);
+  if (sidecarPayload) {
+    writeSidecarJson(filenameBase, sidecarPayload);
+  }
   return txtPath;
+}
+
+async function readDisplayTitle(page, fallbackTitle) {
+  const selectors = [
+    "main h1",
+    "h1",
+    "[role='heading'][aria-level='1']",
+    "h2",
+    "h3",
+  ];
+
+  for (const selector of selectors) {
+    const locator = page.locator(selector).first();
+    const count = await locator.count().catch(() => 0);
+    if (!count) continue;
+    const text = await locator.innerText().catch(() => "");
+    const cleaned = String(text || "").replace(/\s+/g, " ").trim();
+    if (cleaned) return cleaned;
+  }
+
+  const pageTitle = String(await page.title().catch(() => "") || "").trim();
+  if (pageTitle) {
+    const cleaned = pageTitle.split("|")[0].trim();
+    if (cleaned) return cleaned;
+  }
+
+  const bodyText = await page.locator("body").innerText().catch(() => "");
+  const firstLine = String(bodyText || "")
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .find((line) => line && !/^(Karten|Restkarten|Tickets|Remaining tickets|Ausverkauft|Sold out|Spielstätte|Adresse|Shows with English Subtitles)$/i.test(line));
+
+  return firstLine || fallbackTitle || "";
 }
 
 async function waitForEventCountIncrease(page, previousCount, timeout = 12000) {
@@ -1102,7 +1247,24 @@ async function savePreviewSeatmapImage(page, filename) {
     }
 
     if (card.isSoldOut || !card.hasTickets) {
-      const txtName = writeMarkerFile(baseName, "Ausverkauft");
+      const txtName = writeCaptureMarker(
+        baseName,
+        "Ausverkauft",
+        buildSidecarPayload({
+          filenameBase: baseName,
+          screenshotFile: null,
+          textFile: `${baseName}.txt`,
+          captureStatus: "sold_out",
+          displayTitle: card.meta?.title || meta.title,
+          titleRaw: card.meta?.title || meta.title,
+          normalizedTitle: card.meta?.normalizedTitle || normalizeTitle(card.meta?.title || meta.title),
+          venue: meta.venue,
+          sourceDate: meta.date,
+          startTime: meta.time,
+          ticketshopUrl: null,
+          ticketshopEventId: null,
+        }),
+      );
       soldOutTxtCount += 1;
       console.log(`Ausverkauft-Datei gespeichert: ${txtName}`);
       continue;
@@ -1126,7 +1288,25 @@ async function savePreviewSeatmapImage(page, filename) {
       const markerText = clickResult.reason === "expected_event_not_found"
         ? "Erwartete Vorstellung nicht gefunden"
         : "Ausverkauft";
-      const txtName = writeMarkerFile(baseName, markerText);
+      const captureStatus = clickResult.reason === "expected_event_not_found" ? "error" : "sold_out";
+      const txtName = writeCaptureMarker(
+        baseName,
+        markerText,
+        buildSidecarPayload({
+          filenameBase: baseName,
+          screenshotFile: null,
+          textFile: `${baseName}.txt`,
+          captureStatus,
+          displayTitle: clickResult.matchedMeta?.title || meta.title,
+          titleRaw: clickResult.matchedMeta?.title || meta.title,
+          normalizedTitle: clickResult.matchedMeta?.normalizedTitle || normalizeTitle(clickResult.matchedMeta?.title || meta.title),
+          venue: clickResult.matchedMeta?.venue || meta.venue,
+          sourceDate: clickResult.matchedMeta?.date || meta.date,
+          startTime: clickResult.matchedMeta?.time || meta.time,
+          ticketshopUrl: null,
+          ticketshopEventId: null,
+        }),
+      );
       if (clickResult.reason === "expected_event_not_found") {
         noSeatmapTxtCount += 1;
       } else {
@@ -1137,10 +1317,10 @@ async function savePreviewSeatmapImage(page, filename) {
     }
 
     const eventPage = clickResult.href ? detailPage : listPage;
+    const ticketshopUrl = clickResult.href ? new URL(clickResult.href, START_URL).toString() : eventPage.url();
 
     if (clickResult.href) {
-      const targetUrl = new URL(clickResult.href, START_URL).toString();
-      await detailPage.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await detailPage.goto(ticketshopUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
       await detailPage.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
       await detailPage.waitForTimeout(400);
     } else {
@@ -1161,7 +1341,24 @@ async function savePreviewSeatmapImage(page, filename) {
 
     if (!["resi", "cuv", "marstall", "marstall-salon", "aussicht"].includes(venue)) {
       console.log("Andere Spielstätte → überspringe");
-      const txtName = writeMarkerFile(baseName, "Keine Seatmap");
+      const txtName = writeCaptureMarker(
+        baseName,
+        "Keine Seatmap",
+        buildSidecarPayload({
+          filenameBase: baseName,
+          screenshotFile: null,
+          textFile: `${baseName}.txt`,
+          captureStatus: "no_seatmap",
+          displayTitle: await readDisplayTitle(eventPage, meta.title),
+          titleRaw: await readDisplayTitle(eventPage, meta.title),
+          normalizedTitle: normalizeTitle(await readDisplayTitle(eventPage, meta.title)),
+          venue,
+          sourceDate: meta.date,
+          startTime: meta.time,
+          ticketshopUrl,
+          ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
+        }),
+      );
       noSeatmapTxtCount += 1;
       console.log(`Unbekannte Venue ohne Seatmap-Verarbeitung -> Textdatei gespeichert: ${txtName}`);
       if (!clickResult.href) {
@@ -1175,6 +1372,24 @@ async function savePreviewSeatmapImage(page, filename) {
 
     if (seatmapState.mode === "preview") {
       await savePreviewSeatmapImage(eventPage, outputPath(`${baseName}.png`));
+      const displayTitle = await readDisplayTitle(eventPage, meta.title);
+      writeSidecarJson(
+        baseName,
+        buildSidecarPayload({
+          filenameBase: baseName,
+          screenshotFile: `${baseName}.png`,
+          textFile: null,
+          captureStatus: "captured",
+          displayTitle,
+          titleRaw: displayTitle || meta.title,
+          normalizedTitle: normalizeTitle(displayTitle || meta.title),
+          venue,
+          sourceDate: meta.date,
+          startTime: meta.time,
+          ticketshopUrl,
+          ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
+        }),
+      );
       pngCount += 1;
       if (!clickResult.href) {
         await returnToEventList(eventPage);
@@ -1183,7 +1398,25 @@ async function savePreviewSeatmapImage(page, filename) {
     }
 
     if (seatmapState.mode !== "seatmap") {
-      const txtName = writeMarkerFile(baseName, "Keine Seatmap");
+      const displayTitle = await readDisplayTitle(eventPage, meta.title);
+      const txtName = writeCaptureMarker(
+        baseName,
+        "Keine Seatmap",
+        buildSidecarPayload({
+          filenameBase: baseName,
+          screenshotFile: null,
+          textFile: `${baseName}.txt`,
+          captureStatus: "no_seatmap",
+          displayTitle,
+          titleRaw: displayTitle || meta.title,
+          normalizedTitle: normalizeTitle(displayTitle || meta.title),
+          venue,
+          sourceDate: meta.date,
+          startTime: meta.time,
+          ticketshopUrl,
+          ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
+        }),
+      );
       noSeatmapTxtCount += 1;
       console.log(`Keine Seatmap -> Textdatei gespeichert: ${txtName}`);
       if (!clickResult.href) {
@@ -1194,6 +1427,24 @@ async function savePreviewSeatmapImage(page, filename) {
 
     await prepareSeatmap(eventPage, venue);
     await saveSeatmapImage(eventPage, outputPath(`${baseName}.png`), { returnAfter: !clickResult.href });
+    const displayTitle = await readDisplayTitle(eventPage, meta.title);
+    writeSidecarJson(
+      baseName,
+      buildSidecarPayload({
+        filenameBase: baseName,
+        screenshotFile: `${baseName}.png`,
+        textFile: null,
+        captureStatus: "captured",
+        displayTitle,
+        titleRaw: displayTitle || meta.title,
+        normalizedTitle: normalizeTitle(displayTitle || meta.title),
+        venue,
+        sourceDate: meta.date,
+        startTime: meta.time,
+        ticketshopUrl,
+        ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
+      }),
+    );
     pngCount += 1;
   }
 
