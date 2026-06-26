@@ -12,6 +12,8 @@ const RUN_TIMESTAMP = new Date()
   .replace(/\..+$/, "")
   .replace(/:/g, "-");
 const OUTPUT_DIR = path.join(OUTPUT_ROOT, RUN_TIMESTAMP);
+const SEATMODEL_VENUES = new Set(["resi", "cuv", "marstall"]);
+const PUBLIC_API_PREFIX = "https://public-api.eventim.com/seatmap/api/public/";
 
 function isTicketText(text) {
   return /^(Karten|Restkarten|Tickets|Remaining tickets)$/i.test(String(text || "").trim());
@@ -135,6 +137,331 @@ function writeSidecarJson(filenameBase, payload) {
   const jsonPath = outputPath(`${filenameBase}.json`);
   fs.writeFileSync(jsonPath, `${JSON.stringify(payload, null, 2)}\n`);
   return jsonPath;
+}
+
+function isSeatmodelVenue(venue) {
+  return SEATMODEL_VENUES.has(String(venue || "").trim().toLowerCase());
+}
+
+function extractApiName(url) {
+  const match = String(url || "").match(/\/public\/([^/?]+)\/([^/?]+)/);
+  if (match) {
+    return `${match[1]}_${match[2]}`;
+  }
+
+  const normalized = String(url || "")
+    .replace(PUBLIC_API_PREFIX, "")
+    .replace(/[?#].*$/, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_");
+
+  return normalized || "api";
+}
+
+async function writeSeatmodelSidecar(page, filenameBase, {
+  venue,
+  displayTitle,
+  titleRaw,
+  normalizedTitle,
+  sourceDate,
+  startTime,
+  ticketshopUrl = null,
+  ticketshopEventId = null,
+  apiAvailability = null,
+  apiMapping = null,
+}) {
+  if (!isSeatmodelVenue(venue)) {
+    return null;
+  }
+
+  const sidecarPath = outputPath(`${filenameBase}.seatmodel.json`);
+
+  try {
+    const payload = await page.evaluate((context) => {
+      const { apiAvailability = null, apiMapping = null } = context || {};
+
+      function normalize(text) {
+        return String(text || "").replace(/\s+/g, " ").trim();
+      }
+
+      function extractApiStatus(row) {
+        if (Array.isArray(row)) {
+          const last = row[row.length - 1];
+          return last === undefined ? null : last;
+        }
+
+        if (row && typeof row === "object") {
+          if (row.status !== undefined) return row.status;
+          if (row.availability !== undefined) return row.availability;
+          if (row.state !== undefined) return row.state;
+        }
+
+        return null;
+      }
+
+      function toPlainPriceCategory(priceCategory) {
+        if (!priceCategory) return null;
+        const data = typeof priceCategory.getData === "function"
+          ? priceCategory.getData()
+          : priceCategory._data || priceCategory;
+        if (!data || typeof data !== "object") return null;
+
+        return {
+          id: data.id ?? null,
+          name: data.name ?? data.title ?? null,
+          title: data.title ?? data.name ?? null,
+          priceNumber: data.priceNumber ?? data.price ?? null,
+          priceSmart: data.priceSmart ?? null,
+          priceSmartWithCurrency: data.priceSmartWithCurrency ?? null,
+          available: data.available ?? null,
+          hexColor: data.hexColor ?? data.color ?? null,
+          pid: data.pid ?? null,
+          textColor: data.textColor ?? null,
+        };
+      }
+
+      function extractPriceCategoriesFromScripts() {
+        const scripts = [...document.querySelectorAll("script")]
+          .map((script) => normalize(script.textContent || ""))
+          .filter(Boolean);
+
+        for (const scriptText of scripts) {
+          if (!scriptText.includes("priceCategoryInfos")) continue;
+
+          const keyIndex = scriptText.indexOf("priceCategoryInfos");
+          const colonIndex = scriptText.indexOf(":", keyIndex + "priceCategoryInfos".length);
+          if (colonIndex < 0) continue;
+
+          let start = colonIndex + 1;
+          while (start < scriptText.length && /\s/.test(scriptText[start])) start += 1;
+
+          const open = scriptText[start];
+          const close = open === "[" ? "]" : open === "{" ? "}" : null;
+          if (!close) continue;
+
+          let depth = 0;
+          let quote = null;
+          let escaped = false;
+
+          for (let i = start; i < scriptText.length; i += 1) {
+            const ch = scriptText[i];
+
+            if (quote) {
+              if (escaped) {
+                escaped = false;
+                continue;
+              }
+              if (ch === "\\") {
+                escaped = true;
+                continue;
+              }
+              if (ch === quote) {
+                quote = null;
+              }
+              continue;
+            }
+
+            if (ch === "'" || ch === '"' || ch === "`") {
+              quote = ch;
+              continue;
+            }
+
+            if (ch === open) {
+              depth += 1;
+            } else if (ch === close) {
+              depth -= 1;
+              if (depth === 0) {
+                const literal = scriptText.slice(start, i + 1);
+                try {
+                  // The embedded page state is JavaScript object syntax, not strict JSON.
+                  return Function(`"use strict"; return (${literal});`)();
+                } catch {
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        return [];
+      }
+
+      const seatmapEl = document.querySelector("#seatmap");
+      const $ = window.jQuery || window.$;
+      const seatmap = $ && seatmapEl ? $(seatmapEl).data("evt.seatmap") : null;
+      const area = seatmap?.model?.currentArea || null;
+      const seatsObj = area?.getSeats?.() || {};
+      const seatEntries = Object.entries(seatsObj);
+      const apiPriceCategories = Array.isArray(apiMapping?.priceCategories)
+        ? apiMapping.priceCategories.map((priceCategory) => toPlainPriceCategory(priceCategory)).filter(Boolean)
+        : [];
+      const scriptPriceCategories = extractPriceCategoriesFromScripts().map((priceCategory) => toPlainPriceCategory(priceCategory)).filter(Boolean);
+      const priceCategoryInfos = [];
+      const priceCategoriesByKey = new Map();
+
+      function mergePriceCategoryInfo(candidate) {
+        if (!candidate) return;
+        const keys = [];
+        if (candidate.id !== null && candidate.id !== undefined) keys.push(String(candidate.id));
+        if (candidate.pid !== null && candidate.pid !== undefined) keys.push(String(candidate.pid));
+
+        let existing = null;
+        for (const key of keys) {
+          if (priceCategoriesByKey.has(key)) {
+            existing = priceCategoriesByKey.get(key);
+            break;
+          }
+        }
+
+        if (!existing) {
+          existing = { ...candidate };
+          priceCategoryInfos.push(existing);
+        } else {
+          for (const [key, value] of Object.entries(candidate)) {
+            if (existing[key] === null || existing[key] === undefined) {
+              existing[key] = value;
+            }
+          }
+        }
+
+        for (const key of keys) {
+          priceCategoriesByKey.set(key, existing);
+        }
+      }
+
+      for (const priceCategory of scriptPriceCategories) {
+        mergePriceCategoryInfo(priceCategory);
+      }
+
+      for (const priceCategory of apiPriceCategories) {
+        mergePriceCategoryInfo(priceCategory);
+      }
+
+      const seats = seatEntries.map(([seatKey, seat], seatIndex) => {
+        const data = typeof seat?.getData === "function" ? seat.getData() : seat?._data || {};
+        const apiAvailabilityRow = apiAvailability?.seats?.[seatIndex] ?? null;
+        const apiMappingRow = apiMapping?.seats?.[seatIndex] ?? null;
+        const browserPriceCategory = typeof seat?.getPriceCategory === "function" ? toPlainPriceCategory(seat.getPriceCategory()) : null;
+
+        const seatId = data.id ?? seat?.id ?? seatKey ?? null;
+        const browserAvailabilityStatus = typeof seat?.getAvailabilityStatus === "function" ? seat.getAvailabilityStatus() : (data.availabilityStatus ?? null);
+        const apiAvailabilityStatus = extractApiStatus(apiAvailabilityRow);
+        const priceCategoryId = typeof seat?.getPriceCategoryId === "function" ? seat.getPriceCategoryId() : (data.pcId ?? data.priceCategoryId ?? null);
+        const mappedPriceCategory = priceCategoryId !== null && priceCategoryId !== undefined
+          ? priceCategoriesByKey.get(String(priceCategoryId)) || null
+          : null;
+        const effectivePriceCategory = mappedPriceCategory || browserPriceCategory;
+
+        return {
+          seat_id: seatId,
+          seat_index: seatIndex,
+          pcId: data.pcId ?? null,
+          priceCategoryId,
+          priceCategoryName: effectivePriceCategory?.name ?? effectivePriceCategory?.title ?? null,
+          priceCategoryPrice: effectivePriceCategory?.priceNumber ?? effectivePriceCategory?.priceSmart ?? effectivePriceCategory?.priceSmartWithCurrency ?? null,
+          seatGroupId: typeof seat?.getSeatGroupId === "function" ? seat.getSeatGroupId() : (data.seatGroupId ?? null),
+          rowId: typeof seat?.getRowId === "function" ? seat.getRowId() : (data.rowId ?? null),
+          blockId: typeof seat?.getBlockId === "function" ? seat.getBlockId() : (data.blockId ?? null),
+          availabilityStatus: browserAvailabilityStatus,
+          apiAvailabilityStatus,
+          seatStatus: typeof seat?.getSeatStatus === "function" ? seat.getSeatStatus() : (data.seatStatus ?? null),
+          hold: typeof seat?.getHold === "function" ? seat.getHold() : (data.hold ?? null),
+          point: typeof seat?.getPoint === "function" ? seat.getPoint() : (data.point ?? null),
+          coordinates: data.coordinates ?? data.point ?? (typeof seat?.getPointInContainer === "function" ? seat.getPointInContainer() : null),
+          displayed: !!(typeof seat?.isDisplayed === "function" ? seat.isDisplayed() : data.displayed),
+          availability: apiAvailabilityStatus ?? browserAvailabilityStatus,
+          mapping_tuple: Array.isArray(apiMappingRow) ? apiMappingRow : (data.mapping_tuple ?? null),
+        };
+      });
+
+      const availabilityCounts = {};
+      let displayedTotal = 0;
+      let publicFree = 0;
+      let publicSold = 0;
+
+      for (const seat of seats) {
+        if (seat.displayed) displayedTotal += 1;
+        const key = seat.availability === null || seat.availability === undefined ? "null" : String(seat.availability);
+        availabilityCounts[key] = (availabilityCounts[key] || 0) + 1;
+        if (seat.availability === 1) publicFree += 1;
+        if (seat.availability === 2) publicSold += 1;
+      }
+
+      const publicSaleTotal = publicFree + publicSold;
+      const uniqueSeatIds = new Set(seats.map((seat) => seat.seat_id).filter(Boolean)).size;
+      const mappingTupleBreakdown = {};
+
+      for (const seat of seats) {
+        const key = JSON.stringify(seat.mapping_tuple ?? null);
+        mappingTupleBreakdown[key] = (mappingTupleBreakdown[key] || 0) + 1;
+      }
+
+      const priceCategoryIdCount = seats.filter((seat) => seat.priceCategoryId !== null && seat.priceCategoryId !== undefined && seat.priceCategoryId !== "").length;
+
+      return {
+        schema_version: 1,
+        capture_mode: "seatmodel_sidecar",
+        captured_at: new Date().toISOString(),
+        venue: context.venue,
+        venue_label: context.venue_label,
+        title: context.displayTitle || context.titleRaw || context.normalizedTitle || "",
+        title_raw: context.titleRaw || context.displayTitle || "",
+        normalized_title: context.normalizedTitle || normalize(context.displayTitle || context.titleRaw || ""),
+        source_date: context.sourceDate || "",
+        start_time: context.startTime || "",
+        ticketshop_url: context.ticketshopUrl || null,
+        ticketshop_event_id: context.ticketshopEventId || null,
+        png_file: `${context.filenameBase}.png`,
+        seatmap_plugin_present: !!seatmap,
+        has_current_area: !!area,
+        has_get_seats: typeof area?.getSeats === "function",
+        seats_count: seats.length,
+        displayed_total: displayedTotal,
+        unique_seat_ids: uniqueSeatIds,
+        dom_total: seats.length,
+        availability_counts: availabilityCounts,
+        public_sale_total: publicSaleTotal,
+        public_free: publicFree,
+        public_sold: publicSold,
+        mapping_tuple_breakdown: mappingTupleBreakdown,
+        priceCategoryInfosCount: priceCategoryInfos.length,
+        priceCategoryIdCount,
+        priceCategoryInfos,
+        seats,
+      };
+    }, {
+      venue,
+      venue_label: getVenueLabel(venue),
+      displayTitle,
+      titleRaw,
+      normalizedTitle,
+      sourceDate,
+      startTime,
+      ticketshopUrl,
+      ticketshopEventId,
+      filenameBase,
+      apiAvailability,
+      apiMapping,
+    });
+
+    fs.writeFileSync(sidecarPath, `${JSON.stringify(payload, null, 2)}\n`);
+    console.log(`Seatmodel-Sidecar gespeichert: ${sidecarPath}`);
+    return sidecarPath;
+  } catch (error) {
+    console.warn(`Seatmodel-Sidecar fehlgeschlagen für ${filenameBase}: ${String(error?.message || error)}`);
+    return null;
+  }
+}
+
+async function waitForSeatmapApiBodies(getBodies, timeout = 5000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeout) {
+    const bodies = getBodies() || {};
+    if (bodies.availability && bodies.mapping) {
+      return bodies;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return getBodies() || {};
 }
 
 function writeCaptureMarker(filenameBase, contents, sidecarPayload) {
@@ -1217,6 +1544,35 @@ async function savePreviewSeatmapImage(page, filename) {
   const listPage = await context.newPage();
   const detailPage = await context.newPage();
   ensureOutputDir();
+
+  let currentSeatmapApiBodies = {};
+
+  function resetSeatmapApiBodies() {
+    currentSeatmapApiBodies = {};
+  }
+
+  function rememberSeatmapApiBody(url, body) {
+    const apiName = extractApiName(url);
+    currentSeatmapApiBodies[apiName] = body;
+    if (apiName.includes("availability")) currentSeatmapApiBodies.availability = body;
+    if (apiName.includes("mapping")) currentSeatmapApiBodies.mapping = body;
+    if (apiName.includes("seatmap")) currentSeatmapApiBodies.seatmap = body;
+  }
+
+  for (const page of [listPage, detailPage]) {
+    page.on("response", async (response) => {
+      const url = response.url();
+      if (!url.startsWith(PUBLIC_API_PREFIX)) return;
+
+      try {
+        const body = await response.json();
+        rememberSeatmapApiBody(url, body);
+      } catch {
+        // Ignore malformed or non-JSON responses.
+      }
+    });
+  }
+
   await openStartPage(listPage);
 
   let pngCount = 0;
@@ -1318,6 +1674,7 @@ async function savePreviewSeatmapImage(page, filename) {
 
     const eventPage = clickResult.href ? detailPage : listPage;
     const ticketshopUrl = clickResult.href ? new URL(clickResult.href, START_URL).toString() : eventPage.url();
+    resetSeatmapApiBodies();
 
     if (clickResult.href) {
       await detailPage.goto(ticketshopUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
@@ -1427,6 +1784,7 @@ async function savePreviewSeatmapImage(page, filename) {
 
     await prepareSeatmap(eventPage, venue);
     await saveSeatmapImage(eventPage, outputPath(`${baseName}.png`), { returnAfter: !clickResult.href });
+    const seatmapApiBodies = await waitForSeatmapApiBodies(() => currentSeatmapApiBodies, 5000);
     const displayTitle = await readDisplayTitle(eventPage, meta.title);
     writeSidecarJson(
       baseName,
@@ -1445,6 +1803,18 @@ async function savePreviewSeatmapImage(page, filename) {
         ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
       }),
     );
+    await writeSeatmodelSidecar(eventPage, baseName, {
+      venue,
+      displayTitle,
+      titleRaw: displayTitle || meta.title,
+      normalizedTitle: normalizeTitle(displayTitle || meta.title),
+      sourceDate: meta.date,
+      startTime: meta.time,
+      ticketshopUrl,
+      ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
+      apiAvailability: seatmapApiBodies.availability || null,
+      apiMapping: seatmapApiBodies.mapping || null,
+    });
     pngCount += 1;
   }
 
