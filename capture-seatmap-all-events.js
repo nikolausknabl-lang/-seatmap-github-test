@@ -14,6 +14,8 @@ const RUN_TIMESTAMP = new Date()
 const OUTPUT_DIR = path.join(OUTPUT_ROOT, RUN_TIMESTAMP);
 const SEATMODEL_VENUES = new Set(["resi", "cuv", "marstall"]);
 const PUBLIC_API_PREFIX = "https://public-api.eventim.com/seatmap/api/public/";
+const PLACEHOLDER_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBAp3b6d8AAAAASUVORK5CYII=";
 
 function isTicketText(text) {
   return /^(Karten|Restkarten|Tickets|Remaining tickets)$/i.test(String(text || "").trim());
@@ -137,6 +139,11 @@ function writeSidecarJson(filenameBase, payload) {
   const jsonPath = outputPath(`${filenameBase}.json`);
   fs.writeFileSync(jsonPath, `${JSON.stringify(payload, null, 2)}\n`);
   return jsonPath;
+}
+
+function writePlaceholderPng(filename) {
+  fs.writeFileSync(filename, Buffer.from(PLACEHOLDER_PNG_BASE64, "base64"));
+  return filename;
 }
 
 function isSeatmodelVenue(venue) {
@@ -1580,6 +1587,8 @@ async function savePreviewSeatmapImage(page, filename) {
   let noSeatmapTxtCount = 0;
   let ignoredT120Count = 0;
   let discoveredTotal = 0;
+  let seatmodelSidecarCount = 0;
+  let seatmodelFastPathCount = 0;
 
   for (let i = 0; i < MAX_EVENTS; i++) {
     const cards = await ensureEventListReady(listPage, i);
@@ -1782,10 +1791,52 @@ async function savePreviewSeatmapImage(page, filename) {
       continue;
     }
 
+    const displayTitle = await readDisplayTitle(eventPage, meta.title);
+    const seatmapApiBodies = await waitForSeatmapApiBodies(() => currentSeatmapApiBodies, 5000);
+    const seatmodelSidecarPath = await writeSeatmodelSidecar(eventPage, baseName, {
+      venue,
+      displayTitle,
+      titleRaw: displayTitle || meta.title,
+      normalizedTitle: normalizeTitle(displayTitle || meta.title),
+      sourceDate: meta.date,
+      startTime: meta.time,
+      ticketshopUrl,
+      ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
+      apiAvailability: seatmapApiBodies.availability || null,
+      apiMapping: seatmapApiBodies.mapping || null,
+    });
+
+    if (seatmodelSidecarPath) {
+      seatmodelSidecarCount += 1;
+      writeSidecarJson(
+        baseName,
+        buildSidecarPayload({
+          filenameBase: baseName,
+          screenshotFile: `${baseName}.png`,
+          textFile: null,
+          captureStatus: "captured",
+          displayTitle,
+          titleRaw: displayTitle || meta.title,
+          normalizedTitle: normalizeTitle(displayTitle || meta.title),
+          venue,
+          sourceDate: meta.date,
+          startTime: meta.time,
+          ticketshopUrl,
+          ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
+        }),
+      );
+      writePlaceholderPng(outputPath(`${baseName}.png`));
+      seatmodelFastPathCount += 1;
+      pngCount += 1;
+      console.log(`Seatmodel-Fast-Path aktiviert -> Platzhalter-PNG gespeichert: ${baseName}.png`);
+      if (!clickResult.href) {
+        await returnToEventList(eventPage);
+      }
+      continue;
+    }
+
     await prepareSeatmap(eventPage, venue);
     await saveSeatmapImage(eventPage, outputPath(`${baseName}.png`), { returnAfter: !clickResult.href });
-    const seatmapApiBodies = await waitForSeatmapApiBodies(() => currentSeatmapApiBodies, 5000);
-    const displayTitle = await readDisplayTitle(eventPage, meta.title);
     writeSidecarJson(
       baseName,
       buildSidecarPayload({
@@ -1803,18 +1854,6 @@ async function savePreviewSeatmapImage(page, filename) {
         ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
       }),
     );
-    await writeSeatmodelSidecar(eventPage, baseName, {
-      venue,
-      displayTitle,
-      titleRaw: displayTitle || meta.title,
-      normalizedTitle: normalizeTitle(displayTitle || meta.title),
-      sourceDate: meta.date,
-      startTime: meta.time,
-      ticketshopUrl,
-      ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
-      apiAvailability: seatmapApiBodies.availability || null,
-      apiMapping: seatmapApiBodies.mapping || null,
-    });
     pngCount += 1;
   }
 
@@ -1823,6 +1862,8 @@ async function savePreviewSeatmapImage(page, filename) {
   console.log(`Total events found: ${discoveredTotal}`);
   console.log(`Ignored due to T-120: ${ignoredT120Count}`);
   console.log(`PNG count: ${pngCount}`);
+  console.log(`Seatmodel sidecars: ${seatmodelSidecarCount}`);
+  console.log(`Seatmodel fast-path events: ${seatmodelFastPathCount}`);
   console.log(`Ausverkauft TXT: ${soldOutTxtCount}`);
   console.log(`Keine Seatmap TXT: ${noSeatmapTxtCount}`);
   console.log(`Total output files: ${totalOutputFiles}`);
