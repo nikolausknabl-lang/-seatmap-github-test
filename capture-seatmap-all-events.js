@@ -16,6 +16,8 @@ const SEATMODEL_VENUES = new Set(["resi", "cuv", "marstall"]);
 const PUBLIC_API_PREFIX = "https://public-api.eventim.com/seatmap/api/public/";
 const PLACEHOLDER_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBAp3b6d8AAAAASUVORK5CYII=";
+const EVENT_GOTO_TIMEOUT_MS = 60000;
+const EVENT_GOTO_RETRY_DELAY_MS = 1500;
 
 function isTicketText(text) {
   return /^(Karten|Restkarten|Tickets|Remaining tickets)$/i.test(String(text || "").trim());
@@ -478,6 +480,55 @@ function writeCaptureMarker(filenameBase, contents, sidecarPayload) {
     writeSidecarJson(filenameBase, sidecarPayload);
   }
   return txtPath;
+}
+
+function isEventNavigationTimeout(error) {
+  const message = String(error?.message || error || "");
+  return error?.name === "TimeoutError" || /page\.goto: Timeout \d+ms exceeded/i.test(message) || /Timeout \d+ms exceeded/i.test(message);
+}
+
+function formatEventContext({ eventId, title, date, time, venue, url }) {
+  return `eventId=${eventId || "unknown"} title="${title || "unknown"}" date=${date || "unknown"} time=${time || "unknown"} venue=${venue || "unknown"} url=${url || "unknown"}`;
+}
+
+function formatErrorMessage(error) {
+  return String(error?.message || error || "");
+}
+
+function writeCaptureError(captureErrorsPath, entry) {
+  fs.appendFileSync(captureErrorsPath, `${JSON.stringify(entry)}\n`);
+}
+
+async function gotoSelectSeatWithRetry(page, url, eventContext) {
+  const navigate = async () => {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: EVENT_GOTO_TIMEOUT_MS });
+    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(400);
+  };
+
+  try {
+    await navigate();
+    return;
+  } catch (error) {
+    if (!isEventNavigationTimeout(error)) {
+      throw error;
+    }
+
+    console.warn(`selectseat page.goto Timeout, retry 1/1 -> ${formatEventContext(eventContext)}`);
+    await page.waitForTimeout(EVENT_GOTO_RETRY_DELAY_MS);
+
+    try {
+      await navigate();
+      return;
+    } catch (retryError) {
+      const enriched = new Error(
+        `selectseat navigation failed after 2 attempts -> ${formatEventContext(eventContext)} | error=${formatErrorMessage(retryError)}`
+      );
+      enriched.name = "CaptureEventError";
+      enriched.cause = retryError;
+      throw enriched;
+    }
+  }
 }
 
 async function readDisplayTitle(page, fallbackTitle) {
@@ -1551,6 +1602,7 @@ async function savePreviewSeatmapImage(page, filename) {
   const listPage = await context.newPage();
   const detailPage = await context.newPage();
   ensureOutputDir();
+  const captureErrorsPath = outputPath("capture_errors.jsonl");
 
   let currentSeatmapApiBodies = {};
 
@@ -1589,6 +1641,7 @@ async function savePreviewSeatmapImage(page, filename) {
   let discoveredTotal = 0;
   let seatmodelSidecarCount = 0;
   let seatmodelFastPathCount = 0;
+  let captureErrorCount = 0;
 
   for (let i = 0; i < MAX_EVENTS; i++) {
     const cards = await ensureEventListReady(listPage, i);
@@ -1672,26 +1725,58 @@ async function savePreviewSeatmapImage(page, filename) {
           ticketshopEventId: null,
         }),
       );
-      if (clickResult.reason === "expected_event_not_found") {
-        noSeatmapTxtCount += 1;
-      } else {
-        soldOutTxtCount += 1;
+        if (clickResult.reason === "expected_event_not_found") {
+          noSeatmapTxtCount += 1;
+        } else {
+          soldOutTxtCount += 1;
+        }
+        console.log(`Nicht ladbar -> Textdatei gespeichert: ${txtName}`);
+        continue;
       }
-      console.log(`Nicht ladbar -> Textdatei gespeichert: ${txtName}`);
-      continue;
-    }
 
     const eventPage = clickResult.href ? detailPage : listPage;
     const ticketshopUrl = clickResult.href ? new URL(clickResult.href, START_URL).toString() : eventPage.url();
     resetSeatmapApiBodies();
 
-    if (clickResult.href) {
-      await detailPage.goto(ticketshopUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-      await detailPage.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-      await detailPage.waitForTimeout(400);
-    } else {
-      await listPage.waitForLoadState("domcontentloaded", { timeout: 10000 }).catch(() => {});
-      await listPage.waitForTimeout(700);
+    try {
+      if (clickResult.href) {
+        await gotoSelectSeatWithRetry(detailPage, ticketshopUrl, {
+          eventId: extractTicketshopEventId(ticketshopUrl),
+          title: meta.title,
+          date: meta.date,
+          time: meta.time,
+          venue: meta.venue,
+          url: ticketshopUrl,
+        });
+      } else {
+        await listPage.waitForLoadState("domcontentloaded", { timeout: 10000 }).catch(() => {});
+        await listPage.waitForTimeout(700);
+      }
+    } catch (error) {
+      if (error?.name === "CaptureEventError") {
+        captureErrorCount += 1;
+        const entry = {
+          captured_at: CAPTURED_AT,
+          kind: "capture_error",
+          stage: "selectseat_navigation",
+          error_name: error.name,
+          error_message: formatErrorMessage(error),
+          event_id: extractTicketshopEventId(ticketshopUrl),
+          title: meta.title,
+          date: meta.date,
+          time: meta.time,
+          venue: meta.venue,
+          url: ticketshopUrl,
+        };
+        writeCaptureError(captureErrorsPath, entry);
+        console.warn(`Capture-Fehler protokolliert: ${formatEventContext(entry)} | ${entry.error_message}`);
+        if (!clickResult.href) {
+          await returnToEventList(eventPage);
+        }
+        continue;
+      }
+
+      throw error;
     }
 
     const pageText = await eventPage.locator("body").innerText();
@@ -1726,12 +1811,12 @@ async function savePreviewSeatmapImage(page, filename) {
         }),
       );
       noSeatmapTxtCount += 1;
-      console.log(`Unbekannte Venue ohne Seatmap-Verarbeitung -> Textdatei gespeichert: ${txtName}`);
-      if (!clickResult.href) {
-        await returnToEventList(eventPage);
+        console.log(`Unbekannte Venue ohne Seatmap-Verarbeitung -> Textdatei gespeichert: ${txtName}`);
+        if (!clickResult.href) {
+          await returnToEventList(eventPage);
+        }
+        continue;
       }
-      continue;
-    }
 
     console.log("Warte auf Seatmap oder Saalplan-Vorschau...");
     const seatmapState = await waitForSeatmapOrPreview(eventPage, 12000);
@@ -1756,12 +1841,12 @@ async function savePreviewSeatmapImage(page, filename) {
           ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
         }),
       );
-      pngCount += 1;
-      if (!clickResult.href) {
-        await returnToEventList(eventPage);
+        pngCount += 1;
+        if (!clickResult.href) {
+          await returnToEventList(eventPage);
+        }
+        continue;
       }
-      continue;
-    }
 
     if (seatmapState.mode !== "seatmap") {
       const displayTitle = await readDisplayTitle(eventPage, meta.title);
@@ -1788,6 +1873,7 @@ async function savePreviewSeatmapImage(page, filename) {
       if (!clickResult.href) {
         await returnToEventList(eventPage);
       }
+      if (canaryTargetConfigured) break;
       continue;
     }
 
@@ -1827,13 +1913,13 @@ async function savePreviewSeatmapImage(page, filename) {
       );
       writePlaceholderPng(outputPath(`${baseName}.png`));
       seatmodelFastPathCount += 1;
-      pngCount += 1;
-      console.log(`Seatmodel-Fast-Path aktiviert -> Platzhalter-PNG gespeichert: ${baseName}.png`);
-      if (!clickResult.href) {
-        await returnToEventList(eventPage);
+        pngCount += 1;
+        console.log(`Seatmodel-Fast-Path aktiviert -> Platzhalter-PNG gespeichert: ${baseName}.png`);
+        if (!clickResult.href) {
+          await returnToEventList(eventPage);
+        }
+        continue;
       }
-      continue;
-    }
 
     await prepareSeatmap(eventPage, venue);
     await saveSeatmapImage(eventPage, outputPath(`${baseName}.png`), { returnAfter: !clickResult.href });
@@ -1853,9 +1939,9 @@ async function savePreviewSeatmapImage(page, filename) {
         ticketshopUrl,
         ticketshopEventId: extractTicketshopEventId(ticketshopUrl),
       }),
-    );
-    pngCount += 1;
-  }
+      );
+      pngCount += 1;
+    }
 
   const totalOutputFiles = pngCount + soldOutTxtCount + noSeatmapTxtCount;
   console.log(`\nOutput folder: ${OUTPUT_DIR}`);
@@ -1864,6 +1950,7 @@ async function savePreviewSeatmapImage(page, filename) {
   console.log(`PNG count: ${pngCount}`);
   console.log(`Seatmodel sidecars: ${seatmodelSidecarCount}`);
   console.log(`Seatmodel fast-path events: ${seatmodelFastPathCount}`);
+  console.log(`Capture errors: ${captureErrorCount}`);
   console.log(`Ausverkauft TXT: ${soldOutTxtCount}`);
   console.log(`Keine Seatmap TXT: ${noSeatmapTxtCount}`);
   console.log(`Total output files: ${totalOutputFiles}`);
