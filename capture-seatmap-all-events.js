@@ -719,7 +719,7 @@ async function getEventCards(page) {
     function extractEventMeta(blockText, venueKey) {
       const text = normalize(blockText || "");
 
-      const dateMatch = text.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+      const dateMatch = text.match(/(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?/);
       const timeMatch = text.match(/(\d{1,2}:\d{2})/);
 
       let beforeDate = dateMatch ? text.slice(0, dateMatch.index).trim() : text;
@@ -748,7 +748,7 @@ async function getEventCards(page) {
       title = title.replace(/\s+/g, " ").trim() || "Vorstellung";
 
       const date = dateMatch
-        ? `${dateMatch[3]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[1].padStart(2, "0")}`
+        ? `${dateMatch[3] || new Date().getFullYear()}-${dateMatch[2].padStart(2, "0")}-${dateMatch[1].padStart(2, "0")}`
         : "date-unknown";
 
       const time = timeMatch ? timeMatch[1].replace(":", "-") : "time-unknown";
@@ -926,7 +926,7 @@ async function clickEventCardByIndex(page, index, expectedMeta) {
 
     function extractEventMeta(blockText, venueKey) {
       const text = normalize(blockText || "");
-      const dateMatch = text.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+      const dateMatch = text.match(/(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?/);
       const timeMatch = text.match(/(\d{1,2}:\d{2})/);
 
       let beforeDate = dateMatch ? text.slice(0, dateMatch.index).trim() : text;
@@ -955,7 +955,7 @@ async function clickEventCardByIndex(page, index, expectedMeta) {
       title = title.replace(/\s+/g, " ").trim() || "Vorstellung";
 
       const date = dateMatch
-        ? `${dateMatch[3]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[1].padStart(2, "0")}`
+        ? `${dateMatch[3] || new Date().getFullYear()}-${dateMatch[2].padStart(2, "0")}-${dateMatch[1].padStart(2, "0")}`
         : "date-unknown";
 
       const time = timeMatch ? timeMatch[1].replace(":", "-") : "time-unknown";
@@ -1123,7 +1123,7 @@ function safeFilePart(value) {
 function extractEventMeta(blockText, venueKey) {
   const text = String(blockText || "").replace(/\s+/g, " ").trim();
 
-  const dateMatch = text.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  const dateMatch = text.match(/(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?/);
   const timeMatch = text.match(/(\d{1,2}:\d{2})/);
 
   let beforeDate = dateMatch ? text.slice(0, dateMatch.index).trim() : text;
@@ -1158,7 +1158,7 @@ function extractEventMeta(blockText, venueKey) {
   }
 
   const date = dateMatch
-    ? `${dateMatch[3]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[1].padStart(2, "0")}`
+    ? `${dateMatch[3] || new Date().getFullYear()}-${dateMatch[2].padStart(2, "0")}-${dateMatch[1].padStart(2, "0")}`
     : "date-unknown";
 
   const time = timeMatch ? timeMatch[1].replace(":", "-") : "time-unknown";
