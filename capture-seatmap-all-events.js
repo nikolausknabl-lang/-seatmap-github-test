@@ -13,6 +13,7 @@ const RUN_TIMESTAMP = new Date()
   .replace(/:/g, "-");
 const OUTPUT_DIR = path.join(OUTPUT_ROOT, RUN_TIMESTAMP);
 const SEATMODEL_VENUES = new Set(["resi", "cuv", "marstall"]);
+const KNOWN_VENUES = new Set(["resi", "cuv", "marstall", "marstall-salon", "aussicht"]);
 const PUBLIC_API_PREFIX = "https://public-api.eventim.com/seatmap/api/public/";
 const PLACEHOLDER_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBAp3b6d8AAAAASUVORK5CYII=";
@@ -1100,6 +1101,22 @@ function detectVenue(pageText) {
   return "other";
 }
 
+function resolveCaptureVenue(expectedVenue, pageText, blockText) {
+  const expected = String(expectedVenue || "").trim().toLowerCase();
+  const detected = detectVenue(pageText);
+  const blockDetected = detectVenue(blockText);
+
+  if (KNOWN_VENUES.has(expected)) {
+    if (detected !== "other" && detected !== expected) {
+      console.warn(`Venue mismatch: expected=${expected}, page=${detected}; keeping event-card venue`);
+    }
+    return expected;
+  }
+
+  if (blockDetected !== "other") return blockDetected;
+  return detected;
+}
+
 function safeFilePart(value) {
   return String(value || "")
     .normalize("NFD")
@@ -1695,11 +1712,8 @@ async function savePreviewSeatmapImage(page, filename) {
     }
 
     const pageText = await eventPage.locator("body").innerText();
-    let venue = detectVenue(pageText);
-
-    if (venue === "other" && /Marstall/i.test(clickResult.blockText || "")) venue = "marstall";
-    if (venue === "other" && /Cuvilli/i.test(clickResult.blockText || "")) venue = "cuv";
-    if (venue === "other" && /Residenztheater/i.test(clickResult.blockText || "")) venue = "resi";
+    const expectedVenue = clickResult.matchedMeta?.venue || meta.venue;
+    const venue = resolveCaptureVenue(expectedVenue, pageText, clickResult.blockText || "");
 
     console.log("Venue:", venue);
     // marstall-salon + aussicht werden jetzt aktiv verarbeitet
